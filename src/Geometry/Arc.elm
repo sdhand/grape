@@ -1,4 +1,4 @@
-module Geometry.Arc exposing (Arc, toSvg)
+module Geometry.Arc exposing (Arc, toSvg, peak)
 
 
 import Svg
@@ -13,6 +13,29 @@ type alias Arc =
     , minor : Float
     , sweep : Bool
     }
+
+
+peak : Arc -> Vec2
+peak { start, end, major, minor, sweep } =
+    let
+        axis =
+            Vec2.sub end start
+
+        toCenter =
+            sqrt (1 - (Vec2.distance end start)^2/(2*major)^2)
+
+        scale =
+            if sweep then
+                1 + toCenter
+
+            else
+                1 - toCenter
+    in
+    Vec2.perpendicular axis
+        |> Vec2.normalize
+        |> Vec2.mul (scale * minor)
+        |> Vec2.add (Vec2.div 2 axis)
+        |> Vec2.add start
 
 
 toSvg : Arc -> List (Svg.Attribute msg)

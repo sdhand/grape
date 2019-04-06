@@ -1,4 +1,4 @@
-module Geometry.Vec2 exposing (Vec2, magnitude, add, sub, mul, div, normalize, angle, distance, direction)
+module Geometry.Vec2 exposing (Vec2, magnitude, add, sub, mul, div, normalize, angle, distance, direction, perpendicular)
 
 
 type alias Vec2 =
@@ -38,7 +38,16 @@ div s v =
 -- Find the unit vector with the same direction
 normalize : Vec2 -> Vec2
 normalize v =
-    div (magnitude v) v 
+    if magnitude v == 0 then
+        { x = 0, y = 0 }
+    
+    else
+        div (magnitude v) v 
+
+
+perpendicular : Vec2 -> Vec2
+perpendicular { x, y } =
+    { x = y, y = -x }
 
 
 -- Find the angle between two vectors

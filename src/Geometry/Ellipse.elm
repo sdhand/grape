@@ -51,8 +51,12 @@ project v { center, major, minor } =
             Vec2.sub v center
 
         scale =
-            (major * minor)
-                / (sqrt <| (major * translated.y) ^ 2 + (minor * translated.x) ^ 2)
+            if not (translated.x == 0 && translated.y == 0) then
+                (major * minor)
+                    / (sqrt <| (major * translated.y) ^ 2 + (minor * translated.x) ^ 2)
+
+            else
+                0
     in
     Vec2.mul scale translated |> Vec2.add center
 

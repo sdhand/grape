@@ -61,12 +61,12 @@ tryId n prefix ids =
 
 nextNodeId : VisualGraph -> String
 nextNodeId graph =
-    tryId 0 "n" (Graph.nodes graph |> List.map (.label >> Tuple.first >> .label))
+    tryId 0 "n" (Graph.nodes graph |> List.map (.label >> Tuple.first >> .id))
 
 
 nextEdgeId : VisualGraph -> String
 nextEdgeId graph =
-    tryId 0 "e" (Graph.edges graph |> List.concatMap (.label >> List.map .label))
+    tryId 0 "e" (Graph.edges graph |> List.concatMap (.label >> List.map .id))
 
 
 createNode : n -> MultiGraph n e -> MultiGraph n e
