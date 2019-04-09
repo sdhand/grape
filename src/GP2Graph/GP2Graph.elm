@@ -1,7 +1,7 @@
-module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualGraph, VisualContext, createEdge, createNode, deleteEdge, nextEdgeId, nextNodeId, nodePosition, setNodePosition)
+module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, nextEdgeId, nextNodeId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel)
 
-import Geometry.Vec2 exposing (Vec2)
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
+import Geometry.Vec2 exposing (Vec2)
 import Graph exposing (Graph, Node, NodeContext, NodeId)
 import IntDict
 import List.Extra
@@ -40,6 +40,11 @@ type alias Label =
     }
 
 
+setLabel : String -> Label -> Label
+setLabel label meta =
+    { meta | label = label }
+
+
 nextId : Graph n e -> NodeId
 nextId graph =
     Graph.nodeIdRange graph
@@ -50,7 +55,8 @@ nextId graph =
 tryId : Int -> String -> List String -> String
 tryId n prefix ids =
     let
-        attempt = (prefix ++ String.fromInt n)
+        attempt =
+            prefix ++ String.fromInt n
     in
     if List.member attempt ids then
         tryId (n + 1) prefix ids
@@ -128,4 +134,28 @@ setNodePosition id position graph =
     Graph.update
         id
         (Ellipse.setCenter position |> Tuple.mapSecond |> updateNode |> Maybe.map)
+        graph
+
+
+setNodeMajor : NodeId -> Float -> VisualGraph -> VisualGraph
+setNodeMajor id major graph =
+    Graph.update
+        id
+        (Ellipse.setMajor major |> Tuple.mapSecond |> updateNode |> Maybe.map)
+        graph
+
+
+updateNodeLabel : NodeId -> String -> VisualGraph -> VisualGraph
+updateNodeLabel id label graph =
+    Graph.update
+        id
+        (Tuple.mapFirst (setLabel label) |> updateNode |> Maybe.map)
+        graph
+
+
+updateEdgeLabel : NodeId -> NodeId -> Int -> String -> VisualGraph -> VisualGraph
+updateEdgeLabel from to id label graph =
+    Graph.update
+        from
+        (List.Extra.updateAt id (setLabel label) |> updateOutgoing to |> Maybe.map)
         graph

@@ -1,26 +1,26 @@
 module Editor.Graph exposing (Model, Msg(..), init, update, view)
 
---TODO: Remove this
 
-import Browser
-import Graphics.Colour as Colour exposing (Colour)
 import AssocList as Dict exposing (Dict)
+import Browser.Dom as Dom
 import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
 import Geometry.Arc as Arc exposing (Arc)
+import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.LineSegment as LineSegment exposing (LineSegment)
 import Geometry.Vec2 as Vec2 exposing (Vec2)
-import Geometry.Ellipse as Ellipse exposing (Ellipse)
-import Graph exposing (Graph, NodeId, Node, Edge)
+import Graph exposing (Edge, Graph, Node, NodeId)
+import Graphics.Colour as Colour exposing (Colour)
 import Html
 import Html.Attributes
 import Html.Events
 import IntDict exposing (IntDict)
 import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
+import Ports.Editor
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
 import Svg.Events exposing (..)
-import Ports.Editor
-import Json.Encode as Encode
+import Task
 
 
 type Selection
@@ -42,6 +42,9 @@ type Msg
     | Action Action
     | Select Selection
     | Delete Selection
+    | Fit NodeId Float
+    | SetLabel Selection String
+    | NullMsg
 
 
 type alias Model =
@@ -63,7 +66,6 @@ type Style
     | MarkBlue
 
 
-
 arrowSide : Float
 arrowSide =
     10
@@ -79,38 +81,106 @@ radius =
     25
 
 
-
-init : VisualGraph -> String -> (Model, Cmd Msg)
+init : VisualGraph -> String -> ( Model, Cmd Msg )
 init graph id =
-    ({ graph = graph, action = NullAction, selection = NullSelection, id = id }, Ports.Editor.editorInit (Encode.string id))
+    let
+        model =
+            { graph = graph
+            , action = NullAction
+            , selection = NullSelection
+            , id = id
+            }
+
+        commands =
+            Ports.Editor.editorInit (Encode.string id)
+                :: List.map
+                    (.id >> fitLabel id)
+                    (Graph.nodes graph)
+    in
+    ( model, Cmd.batch commands )
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Create coords ->
-            { model | graph = createNode coords model.graph }
+            ( { model | graph = createNode coords model.graph }, Cmd.none )
 
         CreateEdge to ->
-            shouldCreateEdge to model
+            ( shouldCreateEdge to model, Cmd.none )
 
         Move coords ->
-            mouseMoved coords model
+            ( mouseMoved coords model, Cmd.none )
 
         Action action ->
-            { model 
+            ( { model
                 | action = action
                 , selection = shouldSelect action model.selection
-            }
+              }
+            , Cmd.none
+            )
 
         Select selection ->
-            { model | selection = selection }
+            ( { model | selection = selection }, Cmd.none )
 
         Delete selection ->
-            { model 
+            ( { model
                 | graph = delete selection model.graph
                 , selection = shouldDeselect selection model.selection
-            }
+              }
+            , Cmd.none
+            )
+
+        Fit id width ->
+            ( { model
+                | graph = GP2Graph.setNodeMajor id (Basics.max radius (width / 2)) model.graph
+              }
+            , Cmd.none
+            )
+
+        SetLabel selection label ->
+            ( { model
+                | graph = setLabel selection label model.graph
+              }
+            , shouldFit selection model.id
+            )
+
+        NullMsg ->
+            ( model, Cmd.none )
+
+
+fitLabel : String -> NodeId -> Cmd Msg
+fitLabel id nodeid =
+    String.fromInt nodeid
+        |> (++) id
+        |> Dom.getElement
+        |> Task.attempt
+            (Result.map (.element >> .width >> (+) 15 >> Fit nodeid)
+                >> Result.withDefault NullMsg
+            )
+
+
+shouldFit : Selection -> String -> Cmd Msg
+shouldFit selection id =
+    case selection of
+        NodeSelection nodeid ->
+            fitLabel id nodeid
+
+        _ ->
+            Cmd.none
+
+
+setLabel : Selection -> String -> VisualGraph -> VisualGraph
+setLabel selection label graph =
+    case selection of
+        NodeSelection id ->
+            GP2Graph.updateNodeLabel id label graph
+
+        EdgeSelection from to id ->
+            GP2Graph.updateEdgeLabel from to id label graph
+
+        NullSelection ->
+            graph
 
 
 mouseMoved : Vec2 -> Model -> Model
@@ -153,7 +223,7 @@ shouldSelect action selection =
 
         _ ->
             selection
-            
+
 
 newLabel : (VisualGraph -> String) -> VisualGraph -> GP2Graph.Label
 newLabel idGenerator graph =
@@ -165,7 +235,7 @@ newLabel idGenerator graph =
 
 createNode : Vec2 -> VisualGraph -> VisualGraph
 createNode coords graph =
-    GP2Graph.createNode 
+    GP2Graph.createNode
         ( newLabel GP2Graph.nextNodeId graph, Ellipse.fromCircle radius coords )
         graph
 
@@ -229,12 +299,12 @@ deleteDecoder msg =
             )
 
 
-startMoveDecoder : Node (GP2Graph.Label, Ellipse) -> Decoder Msg
+startMoveDecoder : Node ( GP2Graph.Label, Ellipse ) -> Decoder Msg
 startMoveDecoder node =
     coordsDecoder
-        |> Decode.map 
-            (Vec2.sub (Tuple.second node.label).center 
-                >> MoveNode node.id 
+        |> Decode.map
+            (Vec2.sub (Tuple.second node.label).center
+                >> MoveNode node.id
                 >> Action
             )
 
@@ -276,7 +346,8 @@ svgContainer model contents =
 
 
 background : Svg Msg
-background = rect
+background =
+    rect
         [ width "100%"
         , height "100%"
         , fill "white"
@@ -321,22 +392,32 @@ makeNode model node =
 
         events =
             [ on "svgleftdown" (startMoveDecoder node)
-            , on "svgrightdown" (startEdgeDecoder node.id) 
+            , on "svgrightdown" (startEdgeDecoder node.id)
             , on "svgrightup" (Decode.succeed (CreateEdge node.id))
             ]
     in
-        g
-            []
-            [ ellipse (Ellipse.toSvg shape ++ style ++ events) []
-            , text_
-                [ x (String.fromFloat shape.center.x)
-                , y (String.fromFloat (shape.center.y + shape.minor + 15))
-                , fontSize "15"
-                , textAnchor "middle"
-                , pointerEvents "none"
-                ] 
-                [ text (Tuple.first node.label).id ]
+    g
+        []
+        [ ellipse (Ellipse.toSvg shape ++ style ++ events) []
+        , text_
+            [ x (String.fromFloat shape.center.x)
+            , y (String.fromFloat (shape.center.y + shape.minor + 15))
+            , fontSize "15"
+            , textAnchor "middle"
+            , pointerEvents "none"
             ]
+            [ text (Tuple.first node.label).id ]
+        , text_
+            [ x (String.fromFloat shape.center.x)
+            , y (String.fromFloat shape.center.y)
+            , fontSize "15"
+            , textAnchor "middle"
+            , pointerEvents "none"
+            , dominantBaseline "central"
+            , id (model.id ++ String.fromInt node.id)
+            ]
+            [ text (Tuple.first node.label).label ]
+        ]
 
 
 makeEdges : Model -> Edge (List GP2Graph.Label) -> List (Svg Msg)
@@ -351,7 +432,7 @@ makeEdge model from to id edge =
     let
         maybeShape =
             if from == to then
-                Maybe.map 
+                Maybe.map
                     (reflexivePath model id)
                     (Graph.get from model.graph)
 
@@ -377,7 +458,6 @@ makeEdge model from to id edge =
             [ onClick (Select (EdgeSelection from to id))
             , pointerEvents "stroke"
             ]
-        
     in
     case maybeShape of
         Nothing ->
@@ -395,7 +475,15 @@ makeEdge model from to id edge =
                     , y (String.fromFloat (Arc.peak shape).y)
                     , dy "-10"
                     , textAnchor "middle"
-                    , transform ("rotate(" ++ (String.fromFloat (Vec2.angle shape.start shape.end)) ++ "," ++ (String.fromFloat (Arc.peak shape).x) ++ "," ++ (String.fromFloat (Arc.peak shape).y) ++ ")")
+                    , transform
+                        ("rotate("
+                            ++ String.fromFloat (Vec2.angle shape.start shape.end)
+                            ++ ","
+                            ++ String.fromFloat (Arc.peak shape).x
+                            ++ ","
+                            ++ String.fromFloat (Arc.peak shape).y
+                            ++ ")"
+                        )
                     ]
                     [ text edge.label ]
                 ]
@@ -405,11 +493,11 @@ drawingEdge : Model -> List (Svg Msg)
 drawingEdge { graph, action } =
     case action of
         DrawEdge id coords ->
-            Maybe.map 
+            Maybe.map
                 (edgeToPoint coords)
                 (Graph.get id graph)
                 |> Maybe.withDefault []
-            
+
         _ ->
             []
 
@@ -421,7 +509,7 @@ edgeToPoint coords { node } =
             Tuple.second node.label
 
         path =
-            LineSegment.toSvg 
+            LineSegment.toSvg
                 { start = Ellipse.project coords nodeEllipse
                 , end = coords
                 }
@@ -435,7 +523,7 @@ edgeToPoint coords { node } =
             [ strokeWidth "1"
             , pointerEvents "none"
             , stroke <| Colour.toCss <| colour StrokeDefault
-            , markerEnd 
+            , markerEnd
                 (Dict.get StrokeDefault markerIds
                     |> Maybe.map (\marker -> "url(#arrow-" ++ marker ++ ")")
                     |> Maybe.withDefault "none"
@@ -465,7 +553,7 @@ edgePath { graph } id from to =
             Graph.nodes graph
                 |> List.filter
                     (\node -> node /= from.node && node /= to.node)
-                |> List.any 
+                |> List.any
                     (.label >> Tuple.second >> Ellipse.intersects line)
 
         bidir =
@@ -477,7 +565,6 @@ edgePath { graph } id from to =
 
             else
                 id + 0
-
     in
     { start = line.start
     , end = line.end
@@ -489,10 +576,17 @@ edgePath { graph } id from to =
 
 reflexivePath : Model -> Int -> GP2Graph.VisualContext -> Arc
 reflexivePath { graph } id { node } =
-    { start = Tuple.second node.label |> Ellipse.upperArc |> Tuple.first
-    , end = Tuple.second node.label |> Ellipse.upperArc |> Tuple.second
-    , major = 0.8 * radius * ((toFloat id * 0.1) + 1)
-    , minor = radius * ((toFloat id * 0.4) + 1)
+    let
+        start =
+            Tuple.second node.label |> Ellipse.upperArc |> Tuple.first
+
+        end =
+            Tuple.second node.label |> Ellipse.upperArc |> Tuple.second
+    in
+    { start = start
+    , end = end
+    , major = 0.6 * Vec2.distance start end * ((toFloat id * 0.05) + 1)
+    , minor = radius * ((toFloat id * 0.6) + 1)
     , sweep = True
     }
 
@@ -522,18 +616,18 @@ colour style =
             { r = 35, g = 111, b = 98, a = 1.0 }
 
         MarkBlue ->
-            {r = 85, g = 170, b = 235, a = 1.0 }
+            { r = 85, g = 170, b = 235, a = 1.0 }
 
 
 markerIds : Dict Style String
 markerIds =
-    Dict.fromList 
-        [ (StrokeDefault, "default")
-        , (StrokeSelected, "selected")
-        , (MarkAny, "any")
-        , (MarkRed, "red")
-        , (MarkGreen, "green")
-        , (MarkBlue, "blue")
+    Dict.fromList
+        [ ( StrokeDefault, "default" )
+        , ( StrokeSelected, "selected" )
+        , ( MarkAny, "any" )
+        , ( MarkRed, "red" )
+        , ( MarkGreen, "green" )
+        , ( MarkBlue, "blue" )
         ]
 
 
@@ -564,7 +658,7 @@ nodeStyle { selection } node =
     let
         fillColour =
             markToStyle FillDefault (Tuple.first node.label).mark |> colour
-                
+
         strokeColour =
             if selection == NodeSelection node.id then
                 colour StrokeSelected
