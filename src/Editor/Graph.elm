@@ -1,4 +1,4 @@
-module Editor.Graph exposing (Model, Msg(..), init, update, view)
+module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view)
 
 
 import AssocList as Dict exposing (Dict)
@@ -43,7 +43,10 @@ type Msg
     | Select Selection
     | Delete Selection
     | Fit NodeId Float
-    | SetLabel Selection String
+    | UpdateId Selection String
+    | UpdateLabel Selection String
+    | UpdateMark Selection GP2Graph.Mark
+    | UpdateFlag Selection Bool
     | NullMsg
 
 
@@ -52,6 +55,7 @@ type alias Model =
     , action : Action
     , selection : Selection
     , id : String
+    , host : Bool
     }
 
 
@@ -81,14 +85,15 @@ radius =
     25
 
 
-init : VisualGraph -> String -> ( Model, Cmd Msg )
-init graph id =
+init : VisualGraph -> String -> Bool -> ( Model, Cmd Msg )
+init graph id host =
     let
         model =
             { graph = graph
             , action = NullAction
             , selection = NullSelection
             , id = id
+            , host = host
             }
 
         commands =
@@ -100,14 +105,14 @@ init graph id =
     ( model, Cmd.batch commands )
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update : String -> String -> Msg -> Model -> ( Model, Cmd Msg )
+update nextNodeId nextEdgeId msg model =
     case msg of
         Create coords ->
-            ( { model | graph = createNode coords model.graph }, Cmd.none )
+            ( { model | graph = createNode nextNodeId coords model.graph }, Cmd.none )
 
         CreateEdge to ->
-            ( shouldCreateEdge to model, Cmd.none )
+            ( shouldCreateEdge nextEdgeId to model, Cmd.none )
 
         Move coords ->
             ( mouseMoved coords model, Cmd.none )
@@ -138,11 +143,32 @@ update msg model =
             , Cmd.none
             )
 
-        SetLabel selection label ->
+        UpdateId selection id ->
+            ( { model
+                | graph = setId selection id model.graph
+              }
+            , Cmd.none
+            )
+
+        UpdateLabel selection label ->
             ( { model
                 | graph = setLabel selection label model.graph
               }
             , shouldFit selection model.id
+            )
+
+        UpdateMark selection mark ->
+            ( { model
+                | graph = setMark selection mark model.graph
+              }
+            , Cmd.none
+            )
+
+        UpdateFlag selection flag ->
+            ( { model
+                | graph = setFlag selection flag model.graph
+              }
+            , Cmd.none
             )
 
         NullMsg ->
@@ -183,6 +209,45 @@ setLabel selection label graph =
             graph
 
 
+setId : Selection -> String -> VisualGraph -> VisualGraph
+setId selection id graph =
+    case selection of
+        NodeSelection node ->
+            GP2Graph.updateNodeId node id graph
+
+        EdgeSelection from to edge ->
+            GP2Graph.updateEdgeId from to edge id graph
+
+        NullSelection ->
+            graph
+
+
+setMark : Selection -> GP2Graph.Mark -> VisualGraph -> VisualGraph
+setMark selection mark graph =
+    case selection of
+        NodeSelection id ->
+            GP2Graph.updateNodeMark id mark graph
+
+        EdgeSelection from to id ->
+            GP2Graph.updateEdgeMark from to id mark graph
+
+        NullSelection ->
+            graph
+
+
+setFlag : Selection -> Bool -> VisualGraph -> VisualGraph
+setFlag selection flag graph =
+    case selection of
+        NodeSelection id ->
+            GP2Graph.updateNodeFlag id flag graph
+
+        EdgeSelection from to id ->
+            GP2Graph.updateEdgeFlag from to id flag graph
+
+        NullSelection ->
+            graph
+
+
 mouseMoved : Vec2 -> Model -> Model
 mouseMoved coords model =
     case model.action of
@@ -196,11 +261,11 @@ mouseMoved coords model =
             model
 
 
-shouldCreateEdge : NodeId -> Model -> Model
-shouldCreateEdge to model =
+shouldCreateEdge : String -> NodeId -> Model -> Model
+shouldCreateEdge id to model =
     case model.action of
         DrawEdge from _ ->
-            { model | graph = createEdge from to model.graph }
+            { model | graph = createEdge id from to model.graph }
 
         _ ->
             model
@@ -225,25 +290,26 @@ shouldSelect action selection =
             selection
 
 
-newLabel : (VisualGraph -> String) -> VisualGraph -> GP2Graph.Label
-newLabel idGenerator graph =
+newLabel : String -> GP2Graph.Label
+newLabel id =
     { label = ""
-    , id = idGenerator graph
+    , id = id
     , mark = GP2Graph.None
+    , flag = False
     }
 
 
-createNode : Vec2 -> VisualGraph -> VisualGraph
-createNode coords graph =
+createNode : String -> Vec2 -> VisualGraph -> VisualGraph
+createNode id coords graph =
     GP2Graph.createNode
-        ( newLabel GP2Graph.nextNodeId graph, Ellipse.fromCircle radius coords )
+        ( newLabel id, Ellipse.fromCircle radius coords )
         graph
 
 
-createEdge : NodeId -> NodeId -> VisualGraph -> VisualGraph
-createEdge from to graph =
+createEdge : String -> NodeId -> NodeId -> VisualGraph -> VisualGraph
+createEdge id from to graph =
     GP2Graph.createEdge
-        (newLabel GP2Graph.nextNodeId graph)
+        (newLabel id)
         from
         to
         graph
@@ -265,13 +331,12 @@ delete selection graph =
 view : Model -> Html.Html Msg
 view model =
     background
-        :: (Dict.map arrow markerIds |> Dict.values)
+        :: (Dict.map (\k v -> arrow True k (v ++ "-start")) markerIds |> Dict.values)
+        ++ (Dict.map (\k v -> arrow False k (v ++ "-end")) markerIds |> Dict.values)
         ++ List.concatMap (makeEdges model) (Graph.edges model.graph)
         ++ List.map (makeNode model) (Graph.nodes model.graph)
         ++ drawingEdge model
         |> svgContainer model
-        |> List.singleton
-        |> container model
 
 
 coordsDecoder : Decoder Vec2
@@ -320,27 +385,17 @@ moveDecoder =
     Decode.map Move coordsDecoder
 
 
-container : Model -> List (Html.Html Msg) -> Html.Html Msg
-container { selection } contents =
-    Html.div
-        [ Html.Attributes.style "outline" "none"
-        , Html.Attributes.style "line-height" "0"
-        , Html.Attributes.tabindex 0
-        , on "keydown" (deleteDecoder (Delete selection))
-        ]
-        contents
-
-
 svgContainer : Model -> List (Svg Msg) -> Html.Html Msg
 svgContainer model contents =
     svg
-        [ width "100%"
-        , height "100%"
+        [ class "graph-editor"
         , on "svgrightup" (Decode.succeed (Action NullAction))
         , on "svgleftup" (Decode.succeed (Action NullAction))
         , on "svgmousemove" moveDecoder
         , on "mouseleave" (Decode.succeed (Action NullAction))
         , id model.id
+        , Html.Attributes.attribute "tabindex" "0"
+        , on "keydown" (deleteDecoder (Delete model.selection))
         ]
         contents
 
@@ -357,11 +412,11 @@ background =
         []
 
 
-arrow : Style -> String -> Svg Msg
-arrow style name =
+arrow : Bool -> Style -> String -> Svg Msg
+arrow start style name =
     marker
         [ id <| "arrow-" ++ name
-        , refX <| String.fromFloat arrowAltitude
+        , refX <| String.fromFloat (if start then 0 else arrowAltitude)
         , refY <| String.fromFloat <| 0.5 * arrowSide
         , markerWidth <| String.fromFloat <| 2 * arrowSide
         , markerHeight <| String.fromFloat <| 2 * arrowSide
@@ -369,10 +424,13 @@ arrow style name =
         ]
         [ polygon
             [ points <|
-                "0,"
+                String.fromFloat (if start then arrowAltitude else 0)
+                    ++ ","
                     ++ String.fromFloat arrowSide
-                    ++ " 0,0 "
-                    ++ String.fromFloat arrowAltitude
+                    ++ " "
+                    ++ String.fromFloat (if start then arrowAltitude else 0)
+                    ++ ",0 "
+                    ++ String.fromFloat (if start then 0 else arrowAltitude)
                     ++ ","
                     ++ (String.fromFloat <| 0.5 * arrowSide)
             , fill (colour style |> Colour.toCss)
@@ -406,7 +464,7 @@ makeNode model node =
             , textAnchor "middle"
             , pointerEvents "none"
             ]
-            [ text (Tuple.first node.label).id ]
+            [ text (if model.host then "" else (Tuple.first node.label).id) ]
         , text_
             [ x (String.fromFloat shape.center.x)
             , y (String.fromFloat shape.center.y)
@@ -525,7 +583,7 @@ edgeToPoint coords { node } =
             , stroke <| Colour.toCss <| colour StrokeDefault
             , markerEnd
                 (Dict.get StrokeDefault markerIds
-                    |> Maybe.map (\marker -> "url(#arrow-" ++ marker ++ ")")
+                    |> Maybe.map (\marker -> "url(#arrow-" ++ marker ++ "-end)")
                     |> Maybe.withDefault "none"
                 )
             ]
@@ -618,7 +676,6 @@ colour style =
         MarkBlue ->
             { r = 85, g = 170, b = 235, a = 1.0 }
 
-
 markerIds : Dict Style String
 markerIds =
     Dict.fromList
@@ -666,7 +723,7 @@ nodeStyle { selection } node =
             else
                 colour StrokeDefault
     in
-    [ strokeWidth "2"
+    [ strokeWidth (if (Tuple.first node.label).flag then "4" else "2")
     , fill <| Colour.toCss fillColour
     , stroke <| Colour.toCss strokeColour
     ]
@@ -682,10 +739,17 @@ edgeStyle { selection } from to id edge =
             else
                 markToStyle StrokeDefault edge.mark
 
-        markerId =
+        markerId suffix =
             Dict.get strokeStyle markerIds
-                |> Maybe.map (\style -> "url(#arrow-" ++ style ++ ")")
+                |> Maybe.map (\style -> "url(#arrow-" ++ style ++ suffix ++ ")")
                 |> Maybe.withDefault "none"
+
+        markerBi =
+            if edge.flag then
+                markerId "-start"
+
+            else
+                "none"
 
         dashed =
             if edge.mark == GP2Graph.Dashed then
@@ -697,6 +761,7 @@ edgeStyle { selection } from to id edge =
     [ strokeWidth "1"
     , stroke <| Colour.toCss <| colour strokeStyle
     , fillOpacity "0"
-    , markerEnd markerId
+    , markerEnd (markerId "-end")
+    , markerStart markerBi
     , strokeDasharray dashed
     ]

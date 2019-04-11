@@ -1,0 +1,29 @@
+body {
+    margin: 0;
+}
+
+input, textarea, select {
+    margin-right: 10px;
+}
+
+.host-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.graph-editor {
+    width: 100%;
+    outline: none;
+    height: 100%;
+}
+
+svg text {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+svg text::selection {
+    background: none;
+}

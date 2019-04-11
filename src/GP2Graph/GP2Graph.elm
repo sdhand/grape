@@ -1,4 +1,4 @@
-module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, nextEdgeId, nextNodeId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel)
+module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, tryId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel, updateEdgeId, updateNodeId, updateEdgeMark, updateNodeMark, updateEdgeFlag, updateNodeFlag, getEdgeData, getNodeData, setLabel, setId, setMark, setFlag, HostList, HostListItem(..))
 
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.Vec2 exposing (Vec2)
@@ -37,12 +37,38 @@ type alias Label =
     { label : String
     , id : String
     , mark : Mark
+    , flag : Bool
     }
+
+
+type alias HostList =
+    List HostListItem
+
+
+type HostListItem
+    = HostString String
+    | HostInt Int
+    | Empty
 
 
 setLabel : String -> Label -> Label
 setLabel label meta =
     { meta | label = label }
+
+
+setId : String -> Label -> Label
+setId id meta =
+    { meta | id = id }
+
+
+setMark : Mark -> Label -> Label
+setMark mark meta =
+    { meta | mark = mark }
+
+
+setFlag : Bool -> Label -> Label
+setFlag flag meta =
+    { meta | flag = flag }
 
 
 nextId : Graph n e -> NodeId
@@ -63,16 +89,6 @@ tryId n prefix ids =
 
     else
         attempt
-
-
-nextNodeId : VisualGraph -> String
-nextNodeId graph =
-    tryId 0 "n" (Graph.nodes graph |> List.map (.label >> Tuple.first >> .id))
-
-
-nextEdgeId : VisualGraph -> String
-nextEdgeId graph =
-    tryId 0 "e" (Graph.edges graph |> List.concatMap (.label >> List.map .id))
 
 
 createNode : n -> MultiGraph n e -> MultiGraph n e
@@ -159,3 +175,64 @@ updateEdgeLabel from to id label graph =
         from
         (List.Extra.updateAt id (setLabel label) |> updateOutgoing to |> Maybe.map)
         graph
+
+
+updateNodeId : NodeId -> String -> VisualGraph -> VisualGraph
+updateNodeId node id graph =
+    Graph.update
+        node
+        (Tuple.mapFirst (setId id) |> updateNode |> Maybe.map)
+        graph
+
+
+updateEdgeId : NodeId -> NodeId -> Int -> String -> VisualGraph -> VisualGraph
+updateEdgeId from to edge id graph =
+    Graph.update
+        from
+        (List.Extra.updateAt edge (setId id) |> updateOutgoing to |> Maybe.map)
+        graph
+
+
+updateNodeMark : NodeId -> Mark -> VisualGraph -> VisualGraph
+updateNodeMark id mark graph =
+    Graph.update
+        id
+        (Tuple.mapFirst (setMark mark) |> updateNode |> Maybe.map)
+        graph
+
+
+updateEdgeMark : NodeId -> NodeId -> Int -> Mark -> VisualGraph -> VisualGraph
+updateEdgeMark from to id mark graph =
+    Graph.update
+        from
+        (List.Extra.updateAt id (setMark mark) |> updateOutgoing to |> Maybe.map)
+        graph
+
+
+updateNodeFlag : NodeId -> Bool -> VisualGraph -> VisualGraph
+updateNodeFlag id flag graph =
+    Graph.update
+        id
+        (Tuple.mapFirst (setFlag flag) |> updateNode |> Maybe.map)
+        graph
+
+
+updateEdgeFlag : NodeId -> NodeId -> Int -> Bool -> VisualGraph -> VisualGraph
+updateEdgeFlag from to id flag graph =
+    Graph.update
+        from
+        (List.Extra.updateAt id (setFlag flag) |> updateOutgoing to |> Maybe.map)
+        graph
+
+getNodeData : NodeId -> VisualGraph -> Maybe Label
+getNodeData id graph =
+    Graph.get id graph
+        |> Maybe.map (.node >> .label >> Tuple.first)
+
+
+getEdgeData : NodeId -> NodeId -> Int -> VisualGraph -> Maybe Label
+getEdgeData from to id graph =
+    Graph.get from graph
+        |> Maybe.map .outgoing
+        |> Maybe.andThen (IntDict.get to)
+        |> Maybe.andThen (List.Extra.getAt id)

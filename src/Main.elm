@@ -2,36 +2,17 @@ module Main exposing (main)
 
 import Browser exposing (Document)
 import Editor.Graph as GraphEditor
+import Editor.Element as ElementEditor exposing (Msg(..))
 import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
 import Graph
 import Html exposing (..)
+import Html.Attributes exposing (..)
 
 
 type alias Model =
-    { editorModel : GraphEditor.Model }
-
-
-type Msg
-    = EditorMsg GraphEditor.Msg
-
-
-testGraph : VisualGraph
-testGraph =
-    Graph.empty
-        |> GP2Graph.createNode ( { label = "node 1", id = "n1", mark = GP2Graph.Red }, { major = 25, minor = 25, center = { x = 100, y = 100 } } )
-        |> GP2Graph.createNode ( { label = "node 2", id = "n2", mark = GP2Graph.Blue }, { major = 25, minor = 25, center = { x = 500, y = 100 } } )
-        |> GP2Graph.createNode ( { label = "node 3", id = "n3", mark = GP2Graph.Green }, { major = 25, minor = 25, center = { x = 900, y = 100 } } )
-        |> GP2Graph.createNode ( { label = "node 4", id = "n4", mark = GP2Graph.Any }, { major = 25, minor = 25, center = { x = 100, y = 500 } } )
-        |> GP2Graph.createNode ( { label = "node 5", id = "n5", mark = GP2Graph.Grey }, { major = 25, minor = 25, center = { x = 500, y = 500 } } )
-        |> GP2Graph.createNode ( { label = "node 6", id = "n6", mark = GP2Graph.None }, { major = 25, minor = 25, center = { x = 900, y = 500 } } )
-        |> GP2Graph.createEdge { label = "edge 1", id = "e1", mark = GP2Graph.None } 1 0
-        |> GP2Graph.createEdge { label = "edge 2", id = "e2", mark = GP2Graph.Red } 0 3
-        |> GP2Graph.createEdge { label = "edge 3", id = "e3", mark = GP2Graph.Blue } 1 2
-        |> GP2Graph.createEdge { label = "edge 4", id = "e4", mark = GP2Graph.Green } 2 5
-        |> GP2Graph.createEdge { label = "edge 5", id = "e5", mark = GP2Graph.Any } 1 4
-        |> GP2Graph.createEdge { label = "edge 6", id = "e6", mark = GP2Graph.Dashed } 4 3
-        |> GP2Graph.createEdge { label = "edge 7", id = "e7", mark = GP2Graph.None } 4 5
-        |> GP2Graph.createEdge { label = "reflexive", id = "e8", mark = GP2Graph.None } 1 1
+    { editorModel : GraphEditor.Model
+    , elementModel : ElementEditor.Model
+    }
 
 
 main =
@@ -47,26 +28,49 @@ init : () -> ( Model, Cmd Msg )
 init _ =
     let
         ( editorModel, editorCmd ) =
-            GraphEditor.init testGraph "test"
+            GraphEditor.init Graph.empty "host" True
+
     in
-    ( { editorModel = editorModel }, Cmd.batch [ Cmd.map EditorMsg editorCmd ] )
+    ( { editorModel = editorModel, elementModel = ElementEditor.init }, Cmd.map EditorMsg editorCmd )
 
 
 view : Model -> Document Msg
 view model =
     { title = "sushi"
     , body =
-        GraphEditor.view model.editorModel
-            |> Html.map EditorMsg
-            |> List.singleton
+        [ div
+            [ class "host-container" ]
+            [ ElementEditor.view model.editorModel model.elementModel
+            , GraphEditor.view model.editorModel
+                |> Html.map EditorMsg
+            ]
+        ]
     }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        nextNodeId =
+            GP2Graph.tryId 0 "" (Graph.nodes model.editorModel.graph |> List.map (.label >> Tuple.first >> .id))
+
+        nextEdgeId =
+            GP2Graph.tryId 0 "" (Graph.edges model.editorModel.graph |> List.concatMap (.label >> List.map .id))
+    in
     case msg of
         EditorMsg editorMsg ->
-            updateEditor model editorMsg
+            let
+                (newModel, cmd) =
+                    updateEditor nextNodeId nextEdgeId editorMsg model
+            in
+            if newModel.editorModel.selection /= model.editorModel.selection then
+                (updateElement (ElementEditor.Select newModel.editorModel.selection) newModel, cmd)
+
+            else
+                (newModel, cmd)
+
+        ElementMsg elementMsg ->
+            (updateElement elementMsg model, Cmd.none)
 
 
 subscriptions : Model -> Sub Msg
@@ -74,10 +78,15 @@ subscriptions model =
     Sub.none
 
 
-updateEditor : Model -> GraphEditor.Msg -> ( Model, Cmd Msg )
-updateEditor model msg =
+updateEditor : String -> String -> GraphEditor.Msg -> Model -> ( Model, Cmd Msg )
+updateEditor nextNodeId nextEdgeId msg model =
     let
         ( newEditor, cmd ) =
-            GraphEditor.update msg model.editorModel
+            GraphEditor.update nextNodeId nextEdgeId msg model.editorModel
     in
     ( { model | editorModel = newEditor }, Cmd.map EditorMsg cmd )
+
+
+updateElement : ElementEditor.ElementMsg -> Model -> Model
+updateElement msg model =
+    { model | elementModel = ElementEditor.update model.editorModel msg model.elementModel }
