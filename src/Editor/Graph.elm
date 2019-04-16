@@ -1,9 +1,10 @@
-module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view)
+module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view, radius)
 
 
 import AssocList as Dict exposing (Dict)
 import Browser.Dom as Dom
 import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
+import GP2Graph.GraphParser as GraphParser
 import Geometry.Arc as Arc exposing (Arc)
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.LineSegment as LineSegment exposing (LineSegment)
@@ -21,6 +22,8 @@ import Svg exposing (..)
 import Svg.Attributes exposing (..)
 import Svg.Events exposing (..)
 import File.Download as Download
+import File exposing (File)
+import File.Select as Select
 import Task
 
 
@@ -49,6 +52,9 @@ type Msg
     | UpdateMark Selection GP2Graph.Mark
     | UpdateFlag Selection Bool
     | SaveGP2
+    | OpenGP2
+    | SelectGP2 File
+    | LoadGP2 String
     | NullMsg
 
 
@@ -141,6 +147,7 @@ update nextNodeId nextEdgeId msg model =
         Fit id width ->
             ( { model
                 | graph = GP2Graph.setNodeMajor id (Basics.max radius (width / 2)) model.graph
+                    |> GP2Graph.setNodeMinor id radius
               }
             , Cmd.none
             )
@@ -176,8 +183,35 @@ update nextNodeId nextEdgeId msg model =
         SaveGP2 ->
             ( model, Download.string "graph.host" "text/plain" (GP2Graph.toGP2 model.graph))
 
+        OpenGP2 ->
+            ( model, Select.file [".host"] SelectGP2)
+
+        SelectGP2 file ->
+            ( model, Task.perform LoadGP2 (File.toString file))
+
+        LoadGP2 graph ->
+            shouldLoadGraph graph model
+
         NullMsg ->
             ( model, Cmd.none )
+
+
+shouldLoadGraph : String -> Model -> (Model, Cmd Msg)
+shouldLoadGraph graph model =
+    let
+        parsedGraph =
+            GraphParser.parse graph
+    in
+    case parsedGraph of
+        Ok parsed ->
+            if GP2Graph.isValid parsed then
+                ({ model | graph = parsed }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
+
+            else
+                (model, Cmd.none)
+
+        Err _ ->
+            (model, Cmd.none)
 
 
 fitLabel : String -> NodeId -> Cmd Msg

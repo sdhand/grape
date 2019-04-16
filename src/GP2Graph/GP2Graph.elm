@@ -1,4 +1,4 @@
-module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, tryId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel, updateEdgeId, updateNodeId, updateEdgeMark, updateNodeMark, updateEdgeFlag, updateNodeFlag, getEdgeData, getNodeData, setLabel, setId, setMark, setFlag, HostList, HostListItem(..), toGP2)
+module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, tryId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel, updateEdgeId, updateNodeId, updateEdgeMark, updateNodeMark, updateEdgeFlag, updateNodeFlag, getEdgeData, getNodeData, setLabel, setId, setMark, setFlag, HostList, HostListItem(..), toGP2, internalId, isValid, setNodeMinor)
 
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.Vec2 exposing (Vec2)
@@ -34,10 +34,10 @@ type Mark
 
 
 type alias Label =
-    { label : String
-    , id : String
-    , mark : Mark
+    { id : String
     , flag : Bool
+    , label : String
+    , mark : Mark
     }
 
 
@@ -99,7 +99,6 @@ nodesToGP2 node acc =
              else
                 ""
            )
-        ++ ", "
         ++ "<"
         ++ (String.fromFloat pos.center.x)
         ++ ", "
@@ -126,7 +125,7 @@ edgeToGP2 from to label acc =
         ++ ", "
         ++ label.label
         ++ ( if label.mark /= None then
-                " # " ++ (markToString label.mark)
+                "#" ++ (markToString label.mark)
 
              else
                 ""
@@ -151,6 +150,14 @@ toGP2 graph =
         ++"]"
 
 
+internalId : String -> VisualGraph -> Maybe NodeId
+internalId id graph =
+    Graph.nodes graph
+        |> List.filter (.label >> Tuple.first >> .id >> (==) id)
+        |> List.head
+        |> Maybe.map .id
+
+
 setLabel : String -> Label -> Label
 setLabel label meta =
     { meta | label = label }
@@ -169,6 +176,11 @@ setMark mark meta =
 setFlag : Bool -> Label -> Label
 setFlag flag meta =
     { meta | flag = flag }
+
+
+isValid : VisualGraph -> Bool
+isValid graph =
+    True
 
 
 nextId : Graph n e -> NodeId
@@ -258,6 +270,14 @@ setNodeMajor id major graph =
     Graph.update
         id
         (Ellipse.setMajor major |> Tuple.mapSecond |> updateNode |> Maybe.map)
+        graph
+
+
+setNodeMinor : NodeId -> Float -> VisualGraph -> VisualGraph
+setNodeMinor id minor graph =
+    Graph.update
+        id
+        (Ellipse.setMinor minor |> Tuple.mapSecond |> updateNode |> Maybe.map)
         graph
 
 

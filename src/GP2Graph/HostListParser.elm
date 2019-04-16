@@ -5,14 +5,14 @@ import Parser exposing (..)
 import GP2Graph.GP2Graph as GP2Graph
 
 
-whitespace : Parser ()
-whitespace =
-    chompWhile (\c -> c == ' ' || c == '\n' || c == '\r' || c == '\t')
-
-
 parse : String -> Result (List DeadEnd) GP2Graph.HostList
 parse list =
     run (hostListParser |. end) list
+
+
+whitespace : Parser ()
+whitespace =
+    chompWhile (\c -> c == ' ' || c == '\n' || c == '\r' || c == '\t')
 
 
 hostListParser : Parser GP2Graph.HostList
