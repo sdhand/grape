@@ -1,4 +1,4 @@
-module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, tryId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel, updateEdgeId, updateNodeId, updateEdgeMark, updateNodeMark, updateEdgeFlag, updateNodeFlag, getEdgeData, getNodeData, setLabel, setId, setMark, setFlag, HostList, HostListItem(..))
+module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, tryId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel, updateEdgeId, updateNodeId, updateEdgeMark, updateNodeMark, updateEdgeFlag, updateNodeFlag, getEdgeData, getNodeData, setLabel, setId, setMark, setFlag, HostList, HostListItem(..), toGP2)
 
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.Vec2 exposing (Vec2)
@@ -49,6 +49,106 @@ type HostListItem
     = HostString String
     | HostInt Int
     | Empty
+
+
+markToString : Mark -> String
+markToString mark =
+    case mark of
+        None ->
+            "none"
+
+        Any ->
+            "any"
+
+        Grey ->
+            "grey"
+
+        Dashed ->
+            "dashed"
+
+        Red ->
+            "red"
+
+        Blue ->
+            "blue"
+
+        Green ->
+            "green"
+
+
+nodesToGP2 : Graph.Node ( Label, Ellipse ) -> String -> String
+nodesToGP2 node acc =
+    let
+        (label, pos) =
+            node.label
+    in
+    acc
+        ++ "\t("
+        ++ label.id
+        ++ ( if label.flag then
+                "(R)"
+
+             else
+                 ""
+           )
+        ++ ", "
+        ++ label.label
+        ++ ( if label.mark /= None then
+                " # " ++ (markToString label.mark)
+
+             else
+                ""
+           )
+        ++ ", "
+        ++ "<"
+        ++ (String.fromFloat pos.center.x)
+        ++ ", "
+        ++ (String.fromFloat pos.center.y)
+        ++ ">"
+        ++ ")\n"
+
+
+edgeToGP2 : VisualContext -> VisualContext -> Label -> String -> String
+edgeToGP2 from to label acc =
+    acc
+        ++ "\t("
+        ++ label.id
+        ++ ( if label.flag then
+                "(B)"
+
+            else
+                ""
+           )
+        ++ ", "
+        ++ (Tuple.first from.node.label).id
+        ++ ", "
+        ++ (Tuple.first to.node.label).id
+        ++ ", "
+        ++ label.label
+        ++ ( if label.mark /= None then
+                " # " ++ (markToString label.mark)
+
+             else
+                ""
+           )
+        ++ ")\n"
+
+
+edgesToGP2 : VisualGraph -> Graph.Edge (List Label) -> String -> String
+edgesToGP2 graph { from, to, label } acc =
+    acc
+        ++ (Maybe.map2 (\f t -> List.foldl (edgeToGP2 f t) "" label) (Graph.get from graph) (Graph.get to graph)
+                |> Maybe.withDefault ""
+           )
+
+
+toGP2 : VisualGraph -> String
+toGP2 graph =
+    "[\n"
+        ++(List.foldl nodesToGP2 "" (Graph.nodes graph))
+        ++"\t|\n"
+        ++(List.foldl (edgesToGP2 graph) "" (Graph.edges graph))
+        ++"]"
 
 
 setLabel : String -> Label -> Label

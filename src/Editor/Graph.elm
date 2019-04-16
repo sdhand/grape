@@ -20,6 +20,7 @@ import Ports.Editor
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
 import Svg.Events exposing (..)
+import File.Download as Download
 import Task
 
 
@@ -47,6 +48,7 @@ type Msg
     | UpdateLabel Selection String
     | UpdateMark Selection GP2Graph.Mark
     | UpdateFlag Selection Bool
+    | SaveGP2
     | NullMsg
 
 
@@ -170,6 +172,9 @@ update nextNodeId nextEdgeId msg model =
               }
             , Cmd.none
             )
+
+        SaveGP2 ->
+            ( model, Download.string "graph.host" "text/plain" (GP2Graph.toGP2 model.graph))
 
         NullMsg ->
             ( model, Cmd.none )

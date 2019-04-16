@@ -337,6 +337,7 @@ options host isNode disable graph model =
                     [ type_ "button"
                     , class "btn btn-primary"
                     , value "Save"
+                    , onClick (EditorMsg (GraphEditor.SaveGP2))
                     ]
                     []
                 , button
@@ -344,7 +345,7 @@ options host isNode disable graph model =
                     []
                 , div
                     [ class "dropdown-menu dropdown-menu-right" ]
-                    [ a [ class "dropdown-item", href "#" ] [ text "GP2" ]
+                    [ a [ class "dropdown-item", href "#", onClick (EditorMsg (GraphEditor.SaveGP2)) ] [ text "GP2" ]
                     , a [ class "dropdown-item", href "#" ] [ text "DOT" ]
                     ]
                 ]
