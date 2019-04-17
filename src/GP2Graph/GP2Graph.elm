@@ -1,5 +1,6 @@
-module GP2Graph.GP2Graph exposing (Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, tryId, nodePosition, setNodeMajor, setNodePosition, updateEdgeLabel, updateNodeLabel, updateEdgeId, updateNodeId, updateEdgeMark, updateNodeMark, updateEdgeFlag, updateNodeFlag, getEdgeData, getNodeData, setLabel, setId, setMark, setFlag, HostList, HostListItem(..), toGP2, internalId, isValid, setNodeMinor)
+module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark)
 
+import DotLang exposing (Attr(..), Dot(..), EdgeRHS(..), EdgeType(..), ID(..), Stmt(..))
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.Vec2 exposing (Vec2)
 import Graph exposing (Graph, Node, NodeContext, NodeId)
@@ -76,33 +77,58 @@ markToString mark =
             "green"
 
 
+markToColour : Mark -> (String, String)
+markToColour mark =
+    case mark of
+        None ->
+            ("black", "white")
+
+        Any ->
+            ("pink", "pink")
+
+        Grey ->
+            ("grey", "grey")
+
+        Dashed ->
+            ("black", "black")
+
+        Red ->
+            ("red", "red")
+
+        Blue ->
+            ("blue", "blue")
+
+        Green ->
+            ("green", "green")
+
+
 nodesToGP2 : Graph.Node ( Label, Ellipse ) -> String -> String
 nodesToGP2 node acc =
     let
-        (label, pos) =
+        ( label, pos ) =
             node.label
     in
     acc
         ++ "\t("
         ++ label.id
-        ++ ( if label.flag then
+        ++ (if label.flag then
                 "(R)"
 
-             else
-                 ""
+            else
+                ""
            )
         ++ ", "
         ++ label.label
-        ++ ( if label.mark /= None then
-                " # " ++ (markToString label.mark)
+        ++ (if label.mark /= None then
+                " # " ++ markToString label.mark
 
-             else
+            else
                 ""
            )
         ++ "<"
-        ++ (String.fromFloat pos.center.x)
+        ++ String.fromFloat pos.center.x
         ++ ", "
-        ++ (String.fromFloat pos.center.y)
+        ++ String.fromFloat pos.center.y
         ++ ">"
         ++ ")\n"
 
@@ -112,7 +138,7 @@ edgeToGP2 from to label acc =
     acc
         ++ "\t("
         ++ label.id
-        ++ ( if label.flag then
+        ++ (if label.flag then
                 "(B)"
 
             else
@@ -124,10 +150,10 @@ edgeToGP2 from to label acc =
         ++ (Tuple.first to.node.label).id
         ++ ", "
         ++ label.label
-        ++ ( if label.mark /= None then
-                "#" ++ (markToString label.mark)
+        ++ (if label.mark /= None then
+                "#" ++ markToString label.mark
 
-             else
+            else
                 ""
            )
         ++ ")\n"
@@ -141,13 +167,68 @@ edgesToGP2 graph { from, to, label } acc =
            )
 
 
+nodeToDot : Graph.Node ( Label, Ellipse ) -> Stmt
+nodeToDot node =
+    let
+        center =
+            (Tuple.second node.label).center
+    in
+    NodeStmt
+        (DotLang.NodeId (ID (Tuple.first node.label).id) Nothing)
+        [ Attr (ID "pos") (ID (String.fromFloat center.x ++ "," ++ String.fromFloat center.y ++ "!"))
+        , Attr (ID "label") (ID (Tuple.first node.label).label)
+        , Attr (ID "fillcolor") (ID (markToColour (Tuple.first node.label).mark |> Tuple.second))
+        , Attr (ID "style") (ID "filled")
+        , Attr (ID "penwidth") (ID (if (Tuple.first node.label).flag then "4" else "2"))
+        ]
+
+
+edgeToDot : VisualGraph -> Graph.Edge (List Label) -> Maybe (List Stmt)
+edgeToDot graph edge =
+    let
+        from =
+            Graph.get edge.from graph
+                |> Maybe.map (.node >> .label >> Tuple.first >> .id)
+
+        to =
+            Graph.get edge.to graph
+                |> Maybe.map (.node >> .label >> Tuple.first >> .id)
+    in
+    Maybe.map2
+        ( \f t ->
+            List.map
+                ( \l ->
+                    EdgeStmtNode
+                        (DotLang.NodeId (ID f) Nothing)
+                        (EdgeNode (DotLang.NodeId (ID t) Nothing))
+                        []
+                        [ Attr (ID "label") (ID l.label)
+                        , Attr (ID "dir") (ID (if l.flag then "both" else "forward"))
+                        , Attr (ID "color") (ID (markToColour l.mark |> Tuple.first))
+                        ]
+                )
+                edge.label
+        )
+        from
+        to
+
+
 toGP2 : VisualGraph -> String
 toGP2 graph =
     "[\n"
-        ++(List.foldl nodesToGP2 "" (Graph.nodes graph))
-        ++"\t|\n"
-        ++(List.foldl (edgesToGP2 graph) "" (Graph.edges graph))
-        ++"]"
+        ++ List.foldl nodesToGP2 "" (Graph.nodes graph)
+        ++ "\t|\n"
+        ++ List.foldl (edgesToGP2 graph) "" (Graph.edges graph)
+        ++ "]"
+
+
+toDot : VisualGraph -> String
+toDot graph =
+    Dot
+        DotLang.Digraph
+        Nothing
+        (List.map nodeToDot (Graph.nodes graph) ++ (List.filterMap (edgeToDot graph) (Graph.edges graph) |> List.concat))
+        |> DotLang.toString
 
 
 internalId : String -> VisualGraph -> Maybe NodeId
@@ -343,6 +424,7 @@ updateEdgeFlag from to id flag graph =
         from
         (List.Extra.updateAt id (setFlag flag) |> updateOutgoing to |> Maybe.map)
         graph
+
 
 getNodeData : NodeId -> VisualGraph -> Maybe Label
 getNodeData id graph =

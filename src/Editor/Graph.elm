@@ -55,6 +55,7 @@ type Msg
     | OpenGP2
     | SelectGP2 File
     | LoadGP2 String
+    | SaveDot
     | NullMsg
 
 
@@ -191,6 +192,9 @@ update nextNodeId nextEdgeId msg model =
 
         LoadGP2 graph ->
             shouldLoadGraph graph model
+
+        SaveDot ->
+            ( model, Download.string "graph.dot" "text/plain" (GP2Graph.toDot model.graph))
 
         NullMsg ->
             ( model, Cmd.none )
