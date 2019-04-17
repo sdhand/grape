@@ -321,14 +321,14 @@ options host isNode disable graph model =
                     , onClick (EditorMsg GraphEditor.OpenGP2)
                     ]
                     []
-                {-, button
+                , button
                     [ class "btn btn-outline-primary dropdown-toggle dropdown-toggle-split", attribute "data-toggle" "dropdown" ]
                     []
                 , div
                     [ class "dropdown-menu dropdown-menu-right" ]
                     [ a [ class "dropdown-item", href "#", onClick (EditorMsg GraphEditor.OpenGP2) ] [ text "GP2" ]
-                    , a [ class "dropdown-item", href "#" ] [ text "DOT" ]
-                    ]-}
+                    , a [ class "dropdown-item", href "#", onClick (EditorMsg GraphEditor.OpenDot) ] [ text "DOT" ]
+                    ]
                 ]
 
         save =

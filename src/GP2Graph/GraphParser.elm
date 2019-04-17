@@ -86,8 +86,8 @@ ellipse : Parser Ellipse
 ellipse =
     succeed Ellipse
         |= center
-        |= succeed 0
-        |= succeed 0
+        |= succeed 25
+        |= succeed 25
 
 
 center : Parser Vec2
@@ -133,6 +133,7 @@ hostList =
         |. hostListParser
         |= getOffset
         |= getSource
+        |> andThen (\s -> if s == "empty" then succeed "" else succeed s)
 
 
 gpMark : Parser GP2Graph.Mark

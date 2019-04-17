@@ -1,10 +1,29 @@
 var app = Elm.Main.init();
 app.ports.editorInit.subscribe(setupEditor);
 
+app.ports.layoutGraph.subscribe(layoutGraph)
+
+
+function layoutGraph(graph)
+{
+    var viz = new Viz();
+    var renderOptions = {
+        engine: "dot",
+        format: "dot",
+        yInvert: false,
+        images: [],
+        files: []
+    };
+    viz.renderString(graph, renderOptions)
+        .then(dot => {
+            app.ports.layoutDone.send(dot);
+        });
+}
+
 function getPosition(e, svg)
 {
     let position = {};
-    
+
     let point = svg.createSVGPoint();
     point.x = e.clientX;
     point.y = e.clientY;
@@ -30,7 +49,7 @@ function setupEditor(id)
     });
 
     svg.addEventListener("dblclick", (e) => {
-        let position = getPosition(e, svg); 
+        let position = getPosition(e, svg);
         let dblclickEvent = new CustomEvent("svgdblclick", { detail : position, bubbles : true });
         e.target.dispatchEvent(dblclickEvent);
     });

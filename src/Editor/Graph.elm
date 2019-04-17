@@ -1,8 +1,10 @@
-module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view, radius)
+module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view, subscriptions)
 
 
 import AssocList as Dict exposing (Dict)
 import Browser.Dom as Dom
+import DotLang
+import GP2Graph.Dot as Dot
 import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
 import GP2Graph.GraphParser as GraphParser
 import Geometry.Arc as Arc exposing (Arc)
@@ -17,6 +19,7 @@ import Html.Events
 import IntDict exposing (IntDict)
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
+import List.Extra
 import Ports.Editor
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
@@ -55,7 +58,12 @@ type Msg
     | OpenGP2
     | SelectGP2 File
     | LoadGP2 String
+    | OpenDot
+    | SelectDot File
+    | LoadDot String
+    | LayoutDone String
     | SaveDot
+    | DismissError
     | NullMsg
 
 
@@ -65,6 +73,7 @@ type alias Model =
     , selection : Selection
     , id : String
     , host : Bool
+    , error : Bool
     }
 
 
@@ -103,6 +112,7 @@ init graph id host =
             , selection = NullSelection
             , id = id
             , host = host
+            , error = False
             }
 
         commands =
@@ -112,6 +122,11 @@ init graph id host =
                     (Graph.nodes graph)
     in
     ( model, Cmd.batch commands )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Ports.Editor.layoutDone (Decode.decodeValue (Decode.string) >> Result.map LayoutDone >> Result.withDefault NullMsg)
 
 
 update : String -> String -> Msg -> Model -> ( Model, Cmd Msg )
@@ -193,11 +208,73 @@ update nextNodeId nextEdgeId msg model =
         LoadGP2 graph ->
             shouldLoadGraph graph model
 
+        OpenDot ->
+            ( model, Select.file [".dot"] SelectDot)
+
+        SelectDot file ->
+            (model, Task.perform LoadDot (File.toString file))
+
+        LoadDot graph ->
+            shouldLayout graph model
+
+        LayoutDone graph ->
+            layoutDone True graph model
+
         SaveDot ->
-            ( model, Download.string "graph.dot" "text/plain" (GP2Graph.toDot model.graph))
+            ( model, Download.string "graph.dot" "text/vnd.graphviz" (GP2Graph.toDot model.graph))
+
+        DismissError ->
+            ( { model | error = False }, Cmd.none )
 
         NullMsg ->
             ( model, Cmd.none )
+
+
+shouldLayout : String -> Model -> (Model, Cmd Msg)
+shouldLayout graph model =
+    case DotLang.fromString graph of
+        Ok dotGraph ->
+            if Dot.needsLayout dotGraph then
+                (model, Ports.Editor.layoutGraph (Encode.string graph))
+
+            else
+                layoutDone False graph model
+
+        Err _ ->
+            ( { model | error = True }, Cmd.none)
+
+
+stretch : VisualGraph -> VisualGraph
+stretch graph =
+    Graph.mapNodes (Tuple.mapSecond (\ellipse -> { ellipse | center = Vec2.mul 2 ellipse.center })) graph
+
+
+layoutDone : Bool -> String -> Model -> (Model, Cmd Msg)
+layoutDone shouldFix graph model =
+    let
+        hackedGraph =
+            String.lines graph
+                |> List.map String.trim
+                |> List.Extra.removeAt 1
+                |> List.Extra.removeAt 1
+                |> String.join " "
+                |> String.words
+                |> String.join " "
+                |> String.replace "\\" ""
+    in
+    case DotLang.fromString (if shouldFix then hackedGraph else graph) of
+        Ok dotGraph ->
+            let
+                parsed =
+                    GP2Graph.fromDot dotGraph
+
+                spaced =
+                    stretch parsed
+            in
+            ({ model | graph = (if shouldFix then spaced else parsed), selection = NullSelection, action = NullAction }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
+
+        Err t ->
+            always ({ model | error = True }, Cmd.none) (Debug.log "" t)
 
 
 shouldLoadGraph : String -> Model -> (Model, Cmd Msg)
@@ -209,13 +286,13 @@ shouldLoadGraph graph model =
     case parsedGraph of
         Ok parsed ->
             if GP2Graph.isValid parsed then
-                ({ model | graph = parsed }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
+                ({ model | graph = parsed, selection = NullSelection, action = NullAction }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
 
             else
-                (model, Cmd.none)
+                ( { model | error = True }, Cmd.none)
 
         Err _ ->
-            (model, Cmd.none)
+            ( { model | error = True }, Cmd.none)
 
 
 fitLabel : String -> NodeId -> Cmd Msg
@@ -517,7 +594,7 @@ makeNode model node =
             , dominantBaseline "central"
             , id (model.id ++ String.fromInt node.id)
             ]
-            [ text (Tuple.first node.label).label ]
+            [ text (if (String.trim (Tuple.first node.label).label) == "empty" then "" else (Tuple.first node.label).label) ]
         ]
 
 

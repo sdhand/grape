@@ -7,6 +7,7 @@ import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
 import Graph
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (..)
 
 
 type alias Model =
@@ -44,8 +45,42 @@ view model =
             , GraphEditor.view model.editorModel
                 |> Html.map EditorMsg
             ]
-        ]
+        ]++(showModal model.editorModel.error)
     }
+
+
+showModal : Bool -> List (Html Msg)
+showModal show =
+    if show then
+        [ div
+            [ class "modal"
+            , tabindex -1
+            , attribute "role" "dialog"
+            , style "display" "block"
+            ]
+            [ div
+                [ class "modal-dialog", attribute "role" "document" ]
+                [ div
+                    [ class "modal-content" ]
+                    [ div
+                        [ class "modal-header" ]
+                        [ h5 [ class "modal-title" ] [ text "Error Parsing File" ]
+                        , button [ type_ "button", class "close", onClick (EditorMsg GraphEditor.DismissError) ] [ text "×" ]
+                        ]
+                    , div
+                        [ class "modal-body" ]
+                        [ text "File invalid, please try a different file" ]
+                    , div
+                        [ class "modal-footer" ]
+                        [ button [ type_ "button", class "btn btn-primary", onClick (EditorMsg GraphEditor.DismissError) ] [ text "OK" ]]
+                    ]
+                ]
+            ]
+        , div [ class "modal-backdrop show", id "error-modal-back" ] []
+        ]
+
+    else
+        []
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -75,7 +110,8 @@ update msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.none
+    GraphEditor.subscriptions model.editorModel
+        |> Sub.map EditorMsg
 
 
 updateEditor : String -> String -> GraphEditor.Msg -> Model -> ( Model, Cmd Msg )

@@ -1,4 +1,4 @@
-module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark)
+module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot)
 
 import DotLang exposing (Attr(..), Dot(..), EdgeRHS(..), EdgeType(..), ID(..), Stmt(..))
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
@@ -118,9 +118,9 @@ nodesToGP2 node acc =
                 ""
            )
         ++ ", "
-        ++ label.label
+        ++ (if label.label == "" then "empty" else label.label)
         ++ (if label.mark /= None then
-                " # " ++ markToString label.mark
+                "#" ++ markToString label.mark
 
             else
                 ""
@@ -149,7 +149,7 @@ edgeToGP2 from to label acc =
         ++ ", "
         ++ (Tuple.first to.node.label).id
         ++ ", "
-        ++ label.label
+        ++ (if label.label == "" then "empty" else label.label)
         ++ (if label.mark /= None then
                 "#" ++ markToString label.mark
 
@@ -178,8 +178,7 @@ nodeToDot node =
         [ Attr (ID "pos") (ID (String.fromFloat center.x ++ "," ++ String.fromFloat center.y ++ "!"))
         , Attr (ID "label") (ID (Tuple.first node.label).label)
         , Attr (ID "fillcolor") (ID (markToColour (Tuple.first node.label).mark |> Tuple.second))
-        , Attr (ID "style") (ID "filled")
-        , Attr (ID "penwidth") (ID (if (Tuple.first node.label).flag then "4" else "2"))
+        , Attr (ID "style") (ID ("filled"++(if (Tuple.first node.label).flag then ",bold" else "")))
         ]
 
 
@@ -205,6 +204,8 @@ edgeToDot graph edge =
                         [ Attr (ID "label") (ID l.label)
                         , Attr (ID "dir") (ID (if l.flag then "both" else "forward"))
                         , Attr (ID "color") (ID (markToColour l.mark |> Tuple.first))
+                        , Attr (ID "style") (ID (if l.mark == Dashed then "dashed" else "solid"))
+                        , Attr (ID "id") (ID l.id)
                         ]
                 )
                 edge.label
@@ -229,6 +230,144 @@ toDot graph =
         Nothing
         (List.map nodeToDot (Graph.nodes graph) ++ (List.filterMap (edgeToDot graph) (Graph.edges graph) |> List.concat))
         |> DotLang.toString
+
+
+getAttr : String -> List Attr -> Maybe String
+getAttr name attrs =
+    List.filterMap
+        (\a ->
+            case a of
+                Attr (ID n) id ->
+                    if n == name then getDotId id else Nothing
+
+                _ ->
+                    Nothing
+        )
+        attrs
+        |> List.head
+
+
+getDotLabel : List Attr -> String
+getDotLabel attrs =
+    getAttr "label" attrs
+        |> Maybe.withDefault ""
+
+
+getDotNodeMark : List Attr -> Mark
+getDotNodeMark attrs =
+    case getAttr "fillcolor" attrs |> Maybe.withDefault "" of
+        "pink" ->
+            Any
+
+        "grey" ->
+            Grey
+
+        "red" ->
+            Red
+
+        "green" ->
+            Green
+
+        "blue" ->
+            Blue
+
+        _ ->
+            None
+
+
+getDotEdgeMark : List Attr -> Mark
+getDotEdgeMark attrs =
+    if String.contains "dashed" (getAttr "style" attrs |> Maybe.withDefault "") then
+        Dashed
+
+    else
+        case getAttr "color" attrs |> Maybe.withDefault "" of
+            "pink" ->
+                Any
+
+            "red" ->
+                Red
+
+            "green" ->
+                Green
+
+            "blue" ->
+                Blue
+
+            _ ->
+                None
+
+
+getDotRoot : List Attr -> Bool
+getDotRoot attrs =
+    String.contains "bold" (getAttr "style" attrs |> Maybe.withDefault "")
+
+
+parseCenter : String -> Maybe Vec2
+parseCenter pos =
+    let
+        coords =
+            String.split "," pos
+    in
+    Maybe.map2
+        (\x y -> { x = x, y = y })
+        (List.head coords |> Maybe.map String.trim |> Maybe.andThen String.toFloat)
+        (List.tail coords |> Maybe.andThen List.head |> Maybe.map String.trim |> Maybe.map (String.replace "!" "") |> Maybe.andThen String.toFloat)
+
+
+getDotPos : List Attr -> Maybe Ellipse
+getDotPos attrs =
+    Maybe.map
+        (\center -> { major = 25, minor = 25, center = center})
+        (getAttr "pos" attrs |> Maybe.andThen parseCenter)
+
+
+getDotId : ID -> Maybe String
+getDotId id =
+    case id of
+        ID s ->
+            Just s
+
+        NumeralID f ->
+            Just (round f |> String.fromInt)
+
+        _ ->
+            Nothing
+
+
+nodeFromDot : Stmt -> VisualGraph -> VisualGraph
+nodeFromDot stmt graph =
+    case stmt of
+        NodeStmt (DotLang.NodeId id _) attrs ->
+            Maybe.map2
+                (\pos i -> createNode ({ id = i, label = getDotLabel attrs, mark = getDotNodeMark attrs, flag = getDotRoot attrs }, pos) graph)
+                (getDotPos attrs)
+                (getDotId id)
+                |> Maybe.withDefault graph
+
+        _ ->
+            graph
+
+
+edgeFromDot : Stmt -> VisualGraph -> VisualGraph
+edgeFromDot stmt graph =
+    case stmt of
+        EdgeStmtNode (DotLang.NodeId from _) (EdgeNode (DotLang.NodeId to _)) _  attrs ->
+            Maybe.map3
+                (\i f t -> createEdge { id = i, label = getDotLabel attrs, mark = getDotEdgeMark attrs, flag = False } f t graph)
+                (getAttr "id" attrs)
+                (getDotId from |> Maybe.andThen (\f -> internalId f graph))
+                (getDotId to |> Maybe.andThen (\t -> internalId t graph))
+                |> Maybe.withDefault graph
+
+        _ ->
+            graph
+
+
+fromDot : Dot -> VisualGraph
+fromDot (Dot _ _ stmts) =
+    List.foldl nodeFromDot Graph.empty stmts
+        |> (\graph -> List.foldl edgeFromDot graph stmts)
 
 
 internalId : String -> VisualGraph -> Maybe NodeId
