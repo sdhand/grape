@@ -39,6 +39,7 @@ type Selection
 type Action
     = MoveNode NodeId Vec2
     | DrawEdge NodeId Vec2
+    | Pan Vec2
     | NullAction
 
 
@@ -50,6 +51,7 @@ type Msg
     | Select Selection
     | Delete Selection
     | Fit NodeId Float
+    | ActualFit NodeId Float
     | UpdateId Selection String
     | UpdateLabel Selection String
     | UpdateMark Selection GP2Graph.Mark
@@ -64,6 +66,7 @@ type Msg
     | LayoutDone String
     | SaveDot
     | DismissError
+    | Zoom Float
     | NullMsg
 
 
@@ -74,6 +77,8 @@ type alias Model =
     , id : String
     , host : Bool
     , error : Bool
+    , center : Vec2
+    , scale : Float
     }
 
 
@@ -113,6 +118,8 @@ init graph id host =
             , id = id
             , host = host
             , error = False
+            , center = { x = 500, y = 500 }
+            , scale = 1
             }
 
         commands =
@@ -126,7 +133,10 @@ init graph id host =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Ports.Editor.layoutDone (Decode.decodeValue (Decode.string) >> Result.map LayoutDone >> Result.withDefault NullMsg)
+    Sub.batch
+        [ Ports.Editor.layoutDone (Decode.decodeValue (Decode.string) >> Result.map LayoutDone >> Result.withDefault NullMsg)
+        , Ports.Editor.fitDone (Decode.decodeValue (Decode.map2 ActualFit (Decode.field "id" Decode.int) (Decode.field "width" Decode.float)) >> Result.withDefault NullMsg)
+        ]
 
 
 update : String -> String -> Msg -> Model -> ( Model, Cmd Msg )
@@ -161,8 +171,11 @@ update nextNodeId nextEdgeId msg model =
             )
 
         Fit id width ->
+            ( model, Ports.Editor.findFit (Encode.object [  ("svg", Encode.string model.id), ("id", Encode.int id), ("width", Encode.float width) ]))
+
+        ActualFit id width ->
             ( { model
-                | graph = GP2Graph.setNodeMajor id (Basics.max radius (width / 2)) model.graph
+                | graph = GP2Graph.setNodeMajor id (Basics.max radius ((width+15) / 2)) model.graph
                     |> GP2Graph.setNodeMinor id radius
               }
             , Cmd.none
@@ -226,6 +239,9 @@ update nextNodeId nextEdgeId msg model =
         DismissError ->
             ( { model | error = False }, Cmd.none )
 
+        Zoom amount ->
+            ( { model | scale = model.scale * amount }, Cmd.none )
+
         NullMsg ->
             ( model, Cmd.none )
 
@@ -273,8 +289,8 @@ layoutDone shouldFix graph model =
             in
             ({ model | graph = (if shouldFix then spaced else parsed), selection = NullSelection, action = NullAction }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
 
-        Err t ->
-            always ({ model | error = True }, Cmd.none) (Debug.log "" t)
+        Err _ ->
+            ({ model | error = True }, Cmd.none)
 
 
 shouldLoadGraph : String -> Model -> (Model, Cmd Msg)
@@ -301,7 +317,7 @@ fitLabel id nodeid =
         |> (++) id
         |> Dom.getElement
         |> Task.attempt
-            (Result.map (.element >> .width >> (+) 15 >> Fit nodeid)
+            (Result.map (.element >> .width >> Fit nodeid)
                 >> Result.withDefault NullMsg
             )
 
@@ -377,6 +393,9 @@ mouseMoved coords model =
         DrawEdge id _ ->
             { model | action = DrawEdge id coords }
 
+        Pan start ->
+            { model | center = (Vec2.sub start coords) |> Vec2.add model.center }
+
         NullAction ->
             model
 
@@ -405,6 +424,9 @@ shouldSelect action selection =
     case action of
         MoveNode id _ ->
             NodeSelection id
+
+        Pan _ ->
+            NullSelection
 
         _ ->
             selection
@@ -450,8 +472,7 @@ delete selection graph =
 
 view : Model -> Html.Html Msg
 view model =
-    background
-        :: (Dict.map (\k v -> arrow True k (v ++ "-start")) markerIds |> Dict.values)
+    (Dict.map (\k v -> arrow True k (v ++ "-start")) markerIds |> Dict.values)
         ++ (Dict.map (\k v -> arrow False k (v ++ "-end")) markerIds |> Dict.values)
         ++ List.concatMap (makeEdges model) (Graph.edges model.graph)
         ++ List.map (makeNode model) (Graph.nodes model.graph)
@@ -464,6 +485,12 @@ coordsDecoder =
     Decode.map2 Vec2
         (Decode.field "detail" (Decode.field "x" Decode.float))
         (Decode.field "detail" (Decode.field "y" Decode.float))
+
+
+yScrollDecoder : Decoder Float
+yScrollDecoder =
+    Decode.field "deltaY" Decode.float
+        |> Decode.map (\a -> (if a == 0 then 1 else (if a > 0 then 1/(0.75) else 0.75)))
 
 
 createDecoder : Decoder Msg
@@ -507,29 +534,43 @@ moveDecoder =
 
 svgContainer : Model -> List (Svg Msg) -> Html.Html Msg
 svgContainer model contents =
+    let
+        width =
+            1000 * model.scale
+
+        height =
+            1000 * model.scale
+
+        x =
+            model.center.x - (width/2)
+
+        y =
+            model.center.y - (width/2)
+    in
     svg
         [ class "graph-editor"
         , on "svgrightup" (Decode.succeed (Action NullAction))
         , on "svgleftup" (Decode.succeed (Action NullAction))
         , on "svgmousemove" moveDecoder
         , on "mouseleave" (Decode.succeed (Action NullAction))
+        , on "svgleftdown" (coordsDecoder |> Decode.map (Pan >> Action))
+        , on "svgdblclick" createDecoder
+        , on "wheel" (yScrollDecoder |> Decode.map Zoom)
+        , onClick (Select NullSelection)
         , id model.id
         , Html.Attributes.attribute "tabindex" "0"
         , on "keydown" (deleteDecoder (Delete model.selection))
+        , viewBox ((String.fromFloat x)++" "++(String.fromFloat y)++" "++(String.fromFloat width)++" "++(String.fromFloat height))
+        , preserveAspectRatio "xMidYMid meet"
+        , Svg.Attributes.cursor
+            (case model.action of
+                Pan _ ->
+                    "move"
+                _ ->
+                    "auto"
+            )
         ]
         contents
-
-
-background : Svg Msg
-background =
-    rect
-        [ width "100%"
-        , height "100%"
-        , fill "white"
-        , on "svgdblclick" createDecoder
-        , onClick (Select NullSelection)
-        ]
-        []
 
 
 arrow : Bool -> Style -> String -> Svg Msg
@@ -569,8 +610,10 @@ makeNode model node =
             nodeStyle model node
 
         events =
-            [ on "svgleftdown" (startMoveDecoder node)
+            [ stopPropagationOn "svgleftdown" (startMoveDecoder node |> Decode.map (\a -> (a, True)))
             , on "svgrightdown" (startEdgeDecoder node.id)
+            , stopPropagationOn "click" (Decode.succeed (NullMsg, True))
+            , stopPropagationOn "svgdblclick" (Decode.succeed (NullMsg, True))
             , on "svgrightup" (Decode.succeed (CreateEdge node.id))
             ]
     in
@@ -633,7 +676,8 @@ makeEdge model from to id edge =
             ]
 
         hiddenEvents =
-            [ onClick (Select (EdgeSelection from to id))
+            [ stopPropagationOn "click" (Decode.succeed ((Select (EdgeSelection from to id)), True))
+            , stopPropagationOn "svgdblclick" (Decode.succeed (NullMsg, True))
             , pointerEvents "stroke"
             ]
     in

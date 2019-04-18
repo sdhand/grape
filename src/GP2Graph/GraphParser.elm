@@ -90,13 +90,23 @@ ellipse =
         |= succeed 25
 
 
+negFloat : Parser Float
+negFloat =
+    oneOf
+        [ succeed negate
+            |. symbol "-"
+            |= float
+        , float
+        ]
+
+
 center : Parser Vec2
 center =
     succeed Vec2
         |. (symbol >> lexeme) "<"
-        |= lexeme float
+        |= lexeme negFloat
         |. (symbol >> lexeme) ","
-        |= lexeme float
+        |= lexeme negFloat
         |. (symbol >> lexeme) ">"
 
 

@@ -3,6 +3,27 @@ app.ports.editorInit.subscribe(setupEditor);
 
 app.ports.layoutGraph.subscribe(layoutGraph)
 
+app.ports.findFit.subscribe(findFit);
+
+function findFit(node)
+{
+    let svg = document.getElementById(node.svg);
+
+    let point = svg.createSVGPoint();
+    point.x = node.width;
+    point.y = 0;
+
+    let point2 = svg.createSVGPoint();
+    point2.x = 0;
+    point2.y = 0;
+
+    let position = point.matrixTransform(svg.getScreenCTM().inverse());
+    let origin = point2.matrixTransform(svg.getScreenCTM().inverse());
+    let width = position.x - origin.x;
+
+    app.ports.fitDone.send({id:node.id, width:width});
+}
+
 
 function layoutGraph(graph)
 {
