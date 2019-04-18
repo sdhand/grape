@@ -37,7 +37,7 @@ init _ =
 
 view : Model -> Document Msg
 view model =
-    { title = "sushi"
+    { title = "gp2editor"
     , body =
         [ div
             [ class "host-container" ]
