@@ -79,6 +79,8 @@ type alias Model =
     , error : Bool
     , center : Vec2
     , scale : Float
+    , width : Float
+    , height : Float
     }
 
 
@@ -120,6 +122,8 @@ init graph id host =
             , error = False
             , center = { x = 500, y = 500 }
             , scale = 1
+            , width = 1000
+            , height = 1000
             }
 
         commands =
@@ -216,7 +220,7 @@ update nextNodeId nextEdgeId msg model =
             ( model, Select.file [".host"] SelectGP2)
 
         SelectGP2 file ->
-            ( model, Task.perform LoadGP2 (File.toString file))
+            ( model, Task.perform LoadGP2 (File.toString file) )
 
         LoadGP2 graph ->
             shouldLoadGraph graph model
@@ -293,6 +297,30 @@ layoutDone shouldFix graph model =
             ({ model | error = True }, Cmd.none)
 
 
+getDim : VisualGraph -> { width: Float, height : Float, center : Vec2 }
+getDim graph =
+    let
+        maxX =
+            List.map (.label >> Tuple.second >> .center >> .x) (Graph.nodes graph) |> List.maximum |> Maybe.withDefault 900
+
+        maxY =
+            List.map (.label >> Tuple.second >> .center >> .y) (Graph.nodes graph) |> List.maximum |> Maybe.withDefault 900
+
+        minX =
+            List.map (.label >> Tuple.second >> .center >> .x) (Graph.nodes graph) |> List.minimum |> Maybe.withDefault -100
+
+        minY =
+            List.map (.label >> Tuple.second >> .center >> .y) (Graph.nodes graph) |> List.minimum |> Maybe.withDefault -100
+
+        idealWidth =
+            Basics.max (maxX - minX) 800
+
+        idealHeight =
+            Basics.max (maxY - minY) 800
+    in
+    { width = idealWidth+200, height = idealHeight+200, center = { x = (minX+maxX)/2, y = (minY+maxY)/2 } }
+
+
 shouldLoadGraph : String -> Model -> (Model, Cmd Msg)
 shouldLoadGraph graph model =
     let
@@ -302,7 +330,11 @@ shouldLoadGraph graph model =
     case parsedGraph of
         Ok parsed ->
             if GP2Graph.isValid parsed then
-                ({ model | graph = parsed, selection = NullSelection, action = NullAction }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
+                let
+                    dim =
+                        getDim parsed
+                in
+                ({ model | graph = parsed, selection = NullSelection, action = NullAction, width = dim.width, height = dim.height, center = dim.center, scale = 1 }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
 
             else
                 ( { model | error = True }, Cmd.none)
@@ -536,16 +568,16 @@ svgContainer : Model -> List (Svg Msg) -> Html.Html Msg
 svgContainer model contents =
     let
         width =
-            1000 * model.scale
+            model.width * model.scale
 
         height =
-            1000 * model.scale
+            model.height * model.scale
 
         x =
             model.center.x - (width/2)
 
         y =
-            model.center.y - (width/2)
+            model.center.y - (height/2)
     in
     svg
         [ class "graph-editor"
@@ -556,7 +588,6 @@ svgContainer model contents =
         , on "svgleftdown" (coordsDecoder |> Decode.map (Pan >> Action))
         , on "svgdblclick" createDecoder
         , on "wheel" (yScrollDecoder |> Decode.map Zoom)
-        , onClick (Select NullSelection)
         , id model.id
         , Html.Attributes.attribute "tabindex" "0"
         , on "keydown" (deleteDecoder (Delete model.selection))
