@@ -1,4 +1,4 @@
-module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view, subscriptions)
+module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view, subscriptions, setGraph)
 
 
 import AssocList as Dict exposing (Dict)
@@ -6,7 +6,8 @@ import Browser.Dom as Dom
 import DotLang
 import GP2Graph.Dot as Dot
 import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
-import GP2Graph.GraphParser as GraphParser
+import GP2Graph.GP2Parser as GP2Parser
+import DotLang exposing (Dot)
 import Geometry.Arc as Arc exposing (Arc)
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.LineSegment as LineSegment exposing (LineSegment)
@@ -56,16 +57,6 @@ type Msg
     | UpdateLabel Selection String
     | UpdateMark Selection GP2Graph.Mark
     | UpdateFlag Selection Bool
-    | SaveGP2
-    | OpenGP2
-    | SelectGP2 File
-    | LoadGP2 String
-    | OpenDot
-    | SelectDot File
-    | LoadDot String
-    | LayoutDone String
-    | SaveDot
-    | DismissError
     | Zoom Float
     | NullMsg
 
@@ -120,10 +111,10 @@ init graph id host =
             , id = id
             , host = host
             , error = False
-            , center = { x = 500, y = 500 }
+            , center = { x = 375, y = 375 }
             , scale = 1
-            , width = 1000
-            , height = 1000
+            , width = 750
+            , height = 750
             }
 
         commands =
@@ -137,10 +128,7 @@ init graph id host =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.batch
-        [ Ports.Editor.layoutDone (Decode.decodeValue (Decode.string) >> Result.map LayoutDone >> Result.withDefault NullMsg)
-        , Ports.Editor.fitDone (Decode.decodeValue (Decode.map2 ActualFit (Decode.field "id" Decode.int) (Decode.field "width" Decode.float)) >> Result.withDefault NullMsg)
-        ]
+    Ports.Editor.fitDone (Decode.decodeValue (Decode.map2 ActualFit (Decode.field "id" Decode.int) (Decode.field "width" Decode.float)) >> Result.withDefault NullMsg)
 
 
 update : String -> String -> Msg -> Model -> ( Model, Cmd Msg )
@@ -213,36 +201,6 @@ update nextNodeId nextEdgeId msg model =
             , Cmd.none
             )
 
-        SaveGP2 ->
-            ( model, Download.string "graph.host" "text/plain" (GP2Graph.toGP2 model.graph))
-
-        OpenGP2 ->
-            ( model, Select.file [".host"] SelectGP2)
-
-        SelectGP2 file ->
-            ( model, Task.perform LoadGP2 (File.toString file) )
-
-        LoadGP2 graph ->
-            shouldLoadGraph graph model
-
-        OpenDot ->
-            ( model, Select.file [".dot"] SelectDot)
-
-        SelectDot file ->
-            (model, Task.perform LoadDot (File.toString file))
-
-        LoadDot graph ->
-            shouldLayout graph model
-
-        LayoutDone graph ->
-            layoutDone True graph model
-
-        SaveDot ->
-            ( model, Download.string "graph.dot" "text/vnd.graphviz" (GP2Graph.toDot model.graph))
-
-        DismissError ->
-            ( { model | error = False }, Cmd.none )
-
         Zoom amount ->
             ( { model | scale = model.scale * amount }, Cmd.none )
 
@@ -250,61 +208,38 @@ update nextNodeId nextEdgeId msg model =
             ( model, Cmd.none )
 
 
-shouldLayout : String -> Model -> (Model, Cmd Msg)
-shouldLayout graph model =
-    case DotLang.fromString graph of
-        Ok dotGraph ->
-            if Dot.needsLayout dotGraph then
-                (model, Ports.Editor.layoutGraph (Encode.string graph))
-
-            else
-                layoutDone False graph model
-
-        Err _ ->
-            ( { model | error = True }, Cmd.none)
-
-
 stretch : VisualGraph -> VisualGraph
 stretch graph =
     Graph.mapNodes (Tuple.mapSecond (\ellipse -> { ellipse | center = Vec2.mul 2 ellipse.center })) graph
 
 
-layoutDone : Bool -> String -> Model -> (Model, Cmd Msg)
-layoutDone shouldFix graph model =
+setGraph : Bool -> Dot -> Model -> (Model, Cmd Msg)
+setGraph shouldStretch dotGraph model =
     let
-        hackedGraph =
-            String.lines graph
-                |> List.map String.trim
-                |> List.Extra.removeAt 1
-                |> List.Extra.removeAt 1
-                |> String.join " "
-                |> String.words
-                |> String.join " "
-                |> String.replace "\\" ""
-    in
-    case DotLang.fromString (if shouldFix then hackedGraph else graph) of
-        Ok dotGraph ->
-            let
-                parsed =
-                    GP2Graph.fromDot dotGraph
+        parsed =
+            GP2Graph.fromDot dotGraph
 
-                spaced =
-                    stretch parsed
-            in
-            ({ model | graph = (if shouldFix then spaced else parsed), selection = NullSelection, action = NullAction }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
+        graph =
+            if shouldStretch then
+                stretch parsed
 
-        Err _ ->
-            ({ model | error = True }, Cmd.none)
+            else
+                parsed
+
+        dim =
+            getDim graph
+        in
+        ({ model | graph = graph, selection = NullSelection, action = NullAction, width = dim.width, height = dim.height, center = dim.center, scale = 1 }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes graph)))
 
 
 getDim : VisualGraph -> { width: Float, height : Float, center : Vec2 }
 getDim graph =
     let
         maxX =
-            List.map (.label >> Tuple.second >> .center >> .x) (Graph.nodes graph) |> List.maximum |> Maybe.withDefault 900
+            List.map (.label >> Tuple.second >> .center >> .x) (Graph.nodes graph) |> List.maximum |> Maybe.withDefault 650
 
         maxY =
-            List.map (.label >> Tuple.second >> .center >> .y) (Graph.nodes graph) |> List.maximum |> Maybe.withDefault 900
+            List.map (.label >> Tuple.second >> .center >> .y) (Graph.nodes graph) |> List.maximum |> Maybe.withDefault 650
 
         minX =
             List.map (.label >> Tuple.second >> .center >> .x) (Graph.nodes graph) |> List.minimum |> Maybe.withDefault -100
@@ -313,34 +248,12 @@ getDim graph =
             List.map (.label >> Tuple.second >> .center >> .y) (Graph.nodes graph) |> List.minimum |> Maybe.withDefault -100
 
         idealWidth =
-            Basics.max (maxX - minX) 800
+            Basics.max (maxX - minX) 550
 
         idealHeight =
-            Basics.max (maxY - minY) 800
+            Basics.max (maxY - minY) 550
     in
     { width = idealWidth+200, height = idealHeight+200, center = { x = (minX+maxX)/2, y = (minY+maxY)/2 } }
-
-
-shouldLoadGraph : String -> Model -> (Model, Cmd Msg)
-shouldLoadGraph graph model =
-    let
-        parsedGraph =
-            GraphParser.parse graph
-    in
-    case parsedGraph of
-        Ok parsed ->
-            if GP2Graph.isValid parsed then
-                let
-                    dim =
-                        getDim parsed
-                in
-                ({ model | graph = parsed, selection = NullSelection, action = NullAction, width = dim.width, height = dim.height, center = dim.center, scale = 1 }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes parsed)))
-
-            else
-                ( { model | error = True }, Cmd.none)
-
-        Err _ ->
-            ( { model | error = True }, Cmd.none)
 
 
 fitLabel : String -> NodeId -> Cmd Msg

@@ -1,4 +1,4 @@
-module Editor.Element exposing (init, update, view, Model, Msg(..), ElementMsg(..))
+module Editor.Element exposing (init, update, view, Model, Msg(..), ElementMsg(..), FileMsg(..))
 
 import Editor.Graph as GraphEditor
 import Graph
@@ -7,6 +7,8 @@ import Html exposing (..)
 import Json.Decode as Decode exposing (Decoder)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import File exposing (File)
+import DotLang exposing (Dot)
 import GP2Graph.HostListParser as HostListParser
 
 
@@ -20,6 +22,19 @@ type alias Model =
 type Msg
     = ElementMsg ElementMsg
     | EditorMsg GraphEditor.Msg
+    | FileMsg FileMsg
+
+
+type FileMsg
+    = OpenGP2
+    | OpenDot
+    | SelectGP2 File
+    | SelectDot File
+    | LoadDot Bool String
+    | LoadGP2 String
+    | DismissError
+    | SaveGP2
+    | SaveDot
 
 
 type ElementMsg
@@ -318,7 +333,7 @@ options host isNode disable graph model =
                     [ type_ "button"
                     , class "btn btn-outline-primary"
                     , value "Open"
-                    , onClick (EditorMsg GraphEditor.OpenGP2)
+                    , onClick (FileMsg OpenDot)
                     ]
                     []
                 , button
@@ -326,8 +341,8 @@ options host isNode disable graph model =
                     []
                 , div
                     [ class "dropdown-menu dropdown-menu-right" ]
-                    [ a [ class "dropdown-item", href "#", onClick (EditorMsg GraphEditor.OpenGP2) ] [ text "GP2" ]
-                    , a [ class "dropdown-item", href "#", onClick (EditorMsg GraphEditor.OpenDot) ] [ text "DOT" ]
+                    [ a [ class "dropdown-item", href "#", onClick (FileMsg OpenDot) ] [ text "DOT" ]
+                    , a [ class "dropdown-item", href "#", onClick (FileMsg OpenGP2) ] [ text "GP2" ]
                     ]
                 ]
 
@@ -338,7 +353,7 @@ options host isNode disable graph model =
                     [ type_ "button"
                     , class "btn btn-primary"
                     , value "Save"
-                    , onClick (EditorMsg GraphEditor.SaveGP2)
+                    , onClick (FileMsg SaveDot)
                     ]
                     []
                 , button
@@ -346,8 +361,8 @@ options host isNode disable graph model =
                     []
                 , div
                     [ class "dropdown-menu dropdown-menu-right" ]
-                    [ a [ class "dropdown-item", href "#", onClick (EditorMsg GraphEditor.SaveGP2) ] [ text "GP2" ]
-                    , a [ class "dropdown-item", href "#", onClick (EditorMsg GraphEditor.SaveDot) ] [ text "DOT" ]
+                    [ a [ class "dropdown-item", href "#", onClick (FileMsg SaveDot) ] [ text "DOT" ]
+                    , a [ class "dropdown-item", href "#", onClick (FileMsg SaveGP2) ] [ text "GP2" ]
                     ]
                 ]
 

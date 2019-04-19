@@ -2,7 +2,19 @@ module Main exposing (main)
 
 import Browser exposing (Document)
 import Editor.Graph as GraphEditor
-import Editor.Element as ElementEditor exposing (Msg(..))
+import Editor.Element as ElementEditor exposing (Msg(..), FileMsg(..))
+import File
+import GP2Graph.Dot as Dot
+import Ports.Editor
+import Json.Encode as Encode
+import File.Download as Download
+import Task
+import DotLang exposing (Dot)
+import GP2Graph.GP2Parser as GP2Parser
+import Json.Decode as Decode
+import Parser
+import File.Select as Select
+import List.Extra
 import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
 import Graph
 import Html exposing (..)
@@ -13,6 +25,7 @@ import Html.Events exposing (..)
 type alias Model =
     { editorModel : GraphEditor.Model
     , elementModel : ElementEditor.Model
+    , error : Bool
     }
 
 
@@ -32,7 +45,7 @@ init _ =
             GraphEditor.init Graph.empty "host" True
 
     in
-    ( { editorModel = editorModel, elementModel = ElementEditor.init }, Cmd.map EditorMsg editorCmd )
+    ( { editorModel = editorModel, elementModel = ElementEditor.init, error = False }, Cmd.map EditorMsg editorCmd )
 
 
 view : Model -> Document Msg
@@ -45,7 +58,7 @@ view model =
             , GraphEditor.view model.editorModel
                 |> Html.map EditorMsg
             ]
-        ]++(showModal model.editorModel.error)
+        ]++(showModal model.error)
     }
 
 
@@ -65,14 +78,14 @@ showModal show =
                     [ div
                         [ class "modal-header" ]
                         [ h5 [ class "modal-title" ] [ text "Error Parsing File" ]
-                        , button [ type_ "button", class "close", onClick (EditorMsg GraphEditor.DismissError) ] [ text "×" ]
+                        , button [ type_ "button", class "close", onClick (FileMsg DismissError) ] [ text "×" ]
                         ]
                     , div
                         [ class "modal-body" ]
                         [ text "File invalid, please try a different file" ]
                     , div
                         [ class "modal-footer" ]
-                        [ button [ type_ "button", class "btn btn-primary", onClick (EditorMsg GraphEditor.DismissError) ] [ text "OK" ]]
+                        [ button [ type_ "button", class "btn btn-primary", onClick (FileMsg DismissError) ] [ text "OK" ]]
                     ]
                 ]
             ]
@@ -107,11 +120,93 @@ update msg model =
         ElementMsg elementMsg ->
             (updateElement elementMsg model, Cmd.none)
 
+        FileMsg fileMsg ->
+            updateFile fileMsg model
+
+
+updateFile : FileMsg -> Model -> ( Model, Cmd Msg )
+updateFile msg model =
+    case msg of
+        OpenGP2 ->
+            ( model, Select.file [ ".host" ] (SelectGP2 >> FileMsg) )
+
+        OpenDot ->
+            ( model, Select.file [ ".dot" ] (SelectDot >> FileMsg) )
+
+        SelectGP2 file ->
+            ( model
+            , Task.perform
+                (LoadGP2 >> FileMsg)
+                (File.toString file)
+            )
+
+        SelectDot file ->
+            ( model, Task.perform (LoadDot False >> FileMsg) (File.toString file))
+
+        LoadGP2 graph ->
+            shouldLayout False (GP2Parser.parse graph) model
+
+        LoadDot layoutDone graph ->
+            shouldLayout layoutDone (parseGraph layoutDone graph) model
+
+        SaveGP2 ->
+            ( model, Download.string "graph.host" "text/plain" (GP2Graph.toGP2 model.editorModel.graph))
+
+        SaveDot ->
+            ( model, Download.string "graph.dot" "text/vnd.graphviz" (GP2Graph.toDot model.editorModel.graph))
+
+        DismissError ->
+            ( { model | error = False }, Cmd.none )
+
+
+parseGraph : Bool -> String -> Result (List Parser.DeadEnd) Dot
+parseGraph shouldFix graph =
+    if shouldFix then
+        String.lines graph
+            |> List.map String.trim
+            |> List.Extra.removeAt 1
+            |> List.Extra.removeAt 1
+            |> String.join " "
+            |> String.words
+            |> String.join " "
+            |> String.replace "\\ " " "
+            |> DotLang.fromString
+
+    else
+        DotLang.fromString graph
+
+
+shouldLayout : Bool -> Result (List Parser.DeadEnd) Dot  -> Model -> (Model, Cmd Msg)
+shouldLayout layoutDone graph model =
+    case graph of
+        Ok dotGraph ->
+            if layoutDone || not (Dot.needsLayout dotGraph) then
+                setGraph layoutDone dotGraph model
+
+            else
+                ( model, Ports.Editor.layoutGraph (Encode.string (DotLang.toString dotGraph)))
+
+        Err _ ->
+            ( { model | error = True }, Cmd.none )
+
+
+setGraph : Bool -> Dot -> Model -> ( Model, Cmd Msg )
+setGraph shouldStretch graph model =
+    let
+        ( editorModel, cmd ) =
+            GraphEditor.setGraph shouldStretch graph model.editorModel
+    in
+    ({ model | editorModel = editorModel, elementModel = ElementEditor.update editorModel (ElementEditor.Select GraphEditor.NullSelection) model.elementModel }, Cmd.map EditorMsg cmd)
+            
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    GraphEditor.subscriptions model.editorModel
-        |> Sub.map EditorMsg
+    Sub.batch
+        [ GraphEditor.subscriptions model.editorModel
+            |> Sub.map EditorMsg
+        , Ports.Editor.layoutDone
+            (Decode.decodeValue (Decode.string) >> Result.map (LoadDot True >> FileMsg) >> Result.withDefault (EditorMsg GraphEditor.NullMsg))
+        ]
 
 
 updateEditor : String -> String -> GraphEditor.Msg -> Model -> ( Model, Cmd Msg )
