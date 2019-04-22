@@ -1,4 +1,4 @@
-module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot)
+module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), RuleList, RuleListItem(..), StringExpr(..), IntExpr(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot)
 
 import DotLang exposing (Attr(..), Dot(..), EdgeRHS(..), EdgeType(..), ID(..), Stmt(..))
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
@@ -50,6 +50,36 @@ type HostListItem
     = HostString String
     | HostInt Int
     | Empty
+
+
+type alias RuleList =
+    List RuleListItem
+
+
+type RuleListItem
+    = LVar String
+    | IntExpr IntExpr
+    | StringExpr StringExpr
+    | RuleEmpty
+
+
+type StringExpr
+    = SVar String
+    | SLiteral String
+    | SCons StringExpr StringExpr
+
+
+type IntExpr
+    = IVar String
+    | ILiteral Int
+    | Add IntExpr IntExpr
+    | Sub IntExpr IntExpr
+    | Mul IntExpr IntExpr
+    | Div IntExpr IntExpr
+    | Neg IntExpr
+    | Indeg String
+    | Outdeg String
+    | Length String
 
 
 markToString : Mark -> String

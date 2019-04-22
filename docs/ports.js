@@ -1,4 +1,3 @@
-var app = Elm.Main.init();
 app.ports.editorInit.subscribe(setupEditor);
 
 app.ports.layoutGraph.subscribe(layoutGraph)

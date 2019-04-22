@@ -2,8 +2,13 @@ body {
     margin: 0;
 }
 
-input, textarea, select {
-    margin-right: 10px;
+.condition {
+    resize: none;
+    border: none;
+}
+
+.ruledecl {
+    border: none;
 }
 
 .host-container {
@@ -38,4 +43,14 @@ svg text::selection {
     height: 100%;
     overflow: hidden;
     outline: 0;
+}
+
+.rule-container {
+    height: 100%;
+    overflow: hidden;
+}
+
+.rule-container > * {
+    display: inline-block;
+    width: 50%;
 }

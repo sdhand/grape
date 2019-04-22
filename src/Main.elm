@@ -54,8 +54,8 @@ view model =
     , body =
         [ div
             [ class "host-container" ]
-            [ ElementEditor.view model.editorModel model.elementModel
-            , GraphEditor.view model.editorModel
+            [ ElementEditor.view model.editorModel Graph.empty model.elementModel
+            , GraphEditor.view [] [] model.editorModel
                 |> Html.map EditorMsg
             ]
         ]++(showModal model.error)

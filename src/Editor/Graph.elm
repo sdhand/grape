@@ -1,4 +1,4 @@
-module Editor.Graph exposing (Model, Msg(..), Selection(..), init, update, view, subscriptions, setGraph)
+module Editor.Graph exposing (Model, Msg(..), Selection(..), Action(..), init, update, view, subscriptions, setGraph)
 
 
 import AssocList as Dict exposing (Dict)
@@ -38,7 +38,7 @@ type Selection
 
 
 type Action
-    = MoveNode NodeId Vec2
+    = MoveNode NodeId Vec2 Bool
     | DrawEdge NodeId Vec2
     | Pan Vec2
     | NullAction
@@ -78,6 +78,7 @@ type alias Model =
 type Style
     = StrokeDefault
     | StrokeSelected
+    | StrokeFade
     | FillDefault
     | MarkAny
     | MarkGrey
@@ -227,13 +228,13 @@ setGraph shouldStretch dotGraph model =
                 parsed
 
         dim =
-            getDim graph
+            getDim model.host graph
         in
         ({ model | graph = graph, selection = NullSelection, action = NullAction, width = dim.width, height = dim.height, center = dim.center, scale = 1 }, Cmd.batch (List.map (.id >> fitLabel model.id) (Graph.nodes graph)))
 
 
-getDim : VisualGraph -> { width: Float, height : Float, center : Vec2 }
-getDim graph =
+getDim : Bool -> VisualGraph -> { width: Float, height : Float, center : Vec2 }
+getDim host graph =
     let
         maxX =
             List.map (.label >> Tuple.second >> .center >> .x) (Graph.nodes graph) |> List.maximum |> Maybe.withDefault 650
@@ -332,7 +333,7 @@ setFlag selection flag graph =
 mouseMoved : Vec2 -> Model -> Model
 mouseMoved coords model =
     case model.action of
-        MoveNode id offset ->
+        MoveNode id offset _ ->
             { model | graph = GP2Graph.setNodePosition id (Vec2.add coords offset) model.graph }
 
         DrawEdge id _ ->
@@ -367,7 +368,7 @@ shouldDeselect deleted current =
 shouldSelect : Action -> Selection -> Selection
 shouldSelect action selection =
     case action of
-        MoveNode id _ ->
+        MoveNode id _ True ->
             NodeSelection id
 
         Pan _ ->
@@ -415,12 +416,12 @@ delete selection graph =
             graph
 
 
-view : Model -> Html.Html Msg
-view model =
+view : List String -> List String -> Model -> Html.Html Msg
+view interface interfaceEdges model =
     (Dict.map (\k v -> arrow True k (v ++ "-start")) markerIds |> Dict.values)
         ++ (Dict.map (\k v -> arrow False k (v ++ "-end")) markerIds |> Dict.values)
-        ++ List.concatMap (makeEdges model) (Graph.edges model.graph)
-        ++ List.map (makeNode model) (Graph.nodes model.graph)
+        ++ List.concatMap (makeEdges interfaceEdges model) (Graph.edges model.graph)
+        ++ List.map (makeNode interface model) (Graph.nodes model.graph)
         ++ drawingEdge model
         |> svgContainer model
 
@@ -461,7 +462,7 @@ startMoveDecoder node =
     coordsDecoder
         |> Decode.map
             (Vec2.sub (Tuple.second node.label).center
-                >> MoveNode node.id
+                >> (\offset -> MoveNode node.id offset True)
                 >> Action
             )
 
@@ -544,14 +545,17 @@ arrow start style name =
         ]
 
 
-makeNode : Model -> Node ( GP2Graph.Label, Ellipse ) -> Svg Msg
-makeNode model node =
+makeNode : List String -> Model -> Node ( GP2Graph.Label, Ellipse ) -> Svg Msg
+makeNode interfaceNodes model node =
     let
         shape =
             Tuple.second node.label
 
+        interface =
+            List.member (Tuple.first node.label).id interfaceNodes
+
         style =
-            nodeStyle model node
+            nodeStyle interface model node
 
         events =
             [ stopPropagationOn "svgleftdown" (startMoveDecoder node |> Decode.map (\a -> (a, True)))
@@ -570,6 +574,7 @@ makeNode model node =
             , fontSize "15"
             , textAnchor "middle"
             , pointerEvents "none"
+            , fontWeight (if interface  && (not model.host) then "bold" else "normal")
             ]
             [ text (if model.host then "" else (Tuple.first node.label).id) ]
         , text_
@@ -585,16 +590,19 @@ makeNode model node =
         ]
 
 
-makeEdges : Model -> Edge (List GP2Graph.Label) -> List (Svg Msg)
-makeEdges model edges =
+makeEdges : List String -> Model -> Edge (List GP2Graph.Label) -> List (Svg Msg)
+makeEdges interface model edges =
     List.indexedMap
-        (makeEdge model edges.from edges.to)
+        (makeEdge interface model edges.from edges.to)
         edges.label
 
 
-makeEdge : Model -> NodeId -> NodeId -> Int -> GP2Graph.Label -> Svg Msg
-makeEdge model from to id edge =
+makeEdge : List String -> Model -> NodeId -> NodeId -> Int -> GP2Graph.Label -> Svg Msg
+makeEdge interfaceEdges model from to id edge =
     let
+        interface =
+            List.member edge.id interfaceEdges
+
         maybeShape =
             if from == to then
                 Maybe.map
@@ -608,7 +616,7 @@ makeEdge model from to id edge =
                     (Graph.get to model.graph)
 
         visibleStyle =
-            edgeStyle model from to id edge
+            edgeStyle interface model from to id edge
 
         hiddenStyle =
             [ strokeWidth "15"
@@ -620,7 +628,7 @@ makeEdge model from to id edge =
             ]
 
         hiddenEvents =
-            [ stopPropagationOn "click" (Decode.succeed ((Select (EdgeSelection from to id)), True))
+            [ stopPropagationOn "svgleftdown" (Decode.succeed ((Select (EdgeSelection from to id)), True))
             , stopPropagationOn "svgdblclick" (Decode.succeed (NullMsg, True))
             , pointerEvents "stroke"
             ]
@@ -763,6 +771,9 @@ colour style =
         StrokeDefault ->
             { r = 0, g = 0, b = 0, a = 1.0 }
 
+        StrokeFade ->
+            { r = 150, g = 150, b = 150, a = 1.0 }
+
         StrokeSelected ->
             { r = 222, g = 145, b = 22, a = 1.0 }
 
@@ -789,6 +800,7 @@ markerIds =
     Dict.fromList
         [ ( StrokeDefault, "default" )
         , ( StrokeSelected, "selected" )
+        , ( StrokeFade, "fade" )
         , ( MarkAny, "any" )
         , ( MarkRed, "red" )
         , ( MarkGreen, "green" )
@@ -818,8 +830,8 @@ markToStyle default mark =
             default
 
 
-nodeStyle : Model -> Node ( GP2Graph.Label, Ellipse ) -> List (Attribute Msg)
-nodeStyle { selection } node =
+nodeStyle : Bool -> Model -> Node ( GP2Graph.Label, Ellipse ) -> List (Attribute Msg)
+nodeStyle interface { selection, host } node =
     let
         fillColour =
             markToStyle FillDefault (Tuple.first node.label).mark |> colour
@@ -829,7 +841,11 @@ nodeStyle { selection } node =
                 colour StrokeSelected
 
             else
-                colour StrokeDefault
+                if not (interface || host) then
+                    Colour.brighten 150 (colour StrokeDefault)
+
+                else
+                    colour StrokeDefault
     in
     [ strokeWidth (if (Tuple.first node.label).flag then "4" else "2")
     , fill <| Colour.toCss fillColour
@@ -837,15 +853,15 @@ nodeStyle { selection } node =
     ]
 
 
-edgeStyle : Model -> NodeId -> NodeId -> Int -> GP2Graph.Label -> List (Attribute Msg)
-edgeStyle { selection } from to id edge =
+edgeStyle : Bool -> Model -> NodeId -> NodeId -> Int -> GP2Graph.Label -> List (Attribute Msg)
+edgeStyle interface { selection, host } from to id edge =
     let
         strokeStyle =
             if selection == EdgeSelection from to id then
                 StrokeSelected
 
             else
-                markToStyle StrokeDefault edge.mark
+                markToStyle (if not host && not interface then StrokeFade else StrokeDefault) edge.mark
 
         markerId suffix =
             Dict.get strokeStyle markerIds
@@ -866,8 +882,8 @@ edgeStyle { selection } from to id edge =
             else
                 "0"
     in
-    [ strokeWidth "1"
-    , stroke <| Colour.toCss <| colour strokeStyle
+    [ strokeWidth (if not host && interface then "2" else "1")
+    , stroke (colour strokeStyle |> Colour.toCss)
     , fillOpacity "0"
     , markerEnd (markerId "-end")
     , markerStart markerBi

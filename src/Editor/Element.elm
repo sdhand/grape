@@ -10,6 +10,8 @@ import Html.Events exposing (..)
 import File exposing (File)
 import DotLang exposing (Dot)
 import GP2Graph.HostListParser as HostListParser
+import GP2Graph.RuleListParser as RuleListParser
+import Set exposing (Set)
 
 
 type alias Model =
@@ -77,9 +79,29 @@ isValid label =
             False
 
 
-validClass : String -> String
-validClass label =
-    if isValid label then
+isValidR : String -> Bool
+isValidR label =
+    case RuleListParser.parse label of
+        Ok _ ->
+            True
+
+        Err _ ->
+            False
+
+
+isValidId : Set String -> String -> Bool
+isValidId ids id =
+    case RuleListParser.parseId id of
+        Ok _ ->
+            not (Set.member id ids)
+
+        Err _ ->
+            False
+
+
+validClass : (String -> Bool) -> String -> String
+validClass validator label =
+    if validator label then
         ""
 
     else
@@ -143,13 +165,22 @@ markDecoder selection =
         |> Decode.map (stringToMark >> GraphEditor.UpdateMark selection >> EditorMsg)
 
 
-updateLabelDecoder : GraphEditor.Selection -> String -> Decoder Msg
-updateLabelDecoder selection label =
-    if isValid label then
+updateLabelDecoder : Bool -> GraphEditor.Selection -> String -> Decoder Msg
+updateLabelDecoder host selection label =
+    if (if host then isValid else isValidR) label then
         Decode.succeed (EditorMsg (GraphEditor.UpdateLabel selection label))
 
     else
-        Decode.fail "Invalid GP2 Label"
+        Decode.succeed (EditorMsg (GraphEditor.NullMsg))
+
+
+updateIdDecoder : Set String -> GraphEditor.Selection -> String -> Decoder Msg
+updateIdDecoder ids selection id =
+    if isValidId ids id then
+        Decode.succeed (EditorMsg (GraphEditor.UpdateId selection id))
+
+    else
+        Decode.succeed (EditorMsg (GraphEditor.NullMsg))
 
 
 enterDecoder : Msg -> Decoder Msg
@@ -165,47 +196,77 @@ enterDecoder msg =
             )
 
 
-view : GraphEditor.Model -> Model -> Html Msg
-view editor model =
+view : GraphEditor.Model -> GP2Graph.VisualGraph -> Model -> Html Msg
+view editor otherGraph model =
     case editor.selection of
         GraphEditor.NodeSelection _ ->
             Html.form
                 [ class "border-bottom form-inline m-0" ]
-                (options editor.host True False editor.graph model)
+                (options editor.host True False editor.graph otherGraph model)
 
         GraphEditor.EdgeSelection _ _ _ ->
             Html.form
                 [ class "border-bottom form-inline m-0" ]
-                (options editor.host False False editor.graph model)
+                (options editor.host False False editor.graph otherGraph model)
 
         GraphEditor.NullSelection ->
             Html.form
                 [ class "border-bottom form-inline m-0" ]
-                (options True False True editor.graph init)
+                (options editor.host False True editor.graph otherGraph init)
 
 
-options : Bool -> Bool -> Bool -> GP2Graph.VisualGraph -> Model -> List (Html Msg)
-options host isNode disable graph model =
+options : Bool -> Bool -> Bool -> GP2Graph.VisualGraph -> GP2Graph.VisualGraph -> Model -> List (Html Msg)
+options host isNode disable graph otherGraph model =
     let
         data =
             getData model.selection graph
 
+        nodeIds =
+            (Graph.nodes graph)++(Graph.nodes otherGraph)
+                |> List.map (.label >> Tuple.first >> .id)
+                |> Set.fromList
+                |> Set.remove data.id
+
+        edgeIds =
+            Graph.edges graph
+                |> List.concatMap (.label >> List.map .id)
+                |> Set.fromList
+                |> Set.remove data.id
+
         idInput =
             div
-                [ hidden host
-                , class "input-group ml-2 my-2"
+                [ class "input-group my-2 ml-2"
+                , hidden host
                 ]
                 [ div
-                    [ class "input-group-prepend"]
+                    [ class "input-group-prepend" ]
                     [ div [ class "input-group-text" ] [ text "ID:" ] ]
                 , input
                     [ type_ "text"
                     , class "form-control"
-                    , disabled disable
                     , value model.id
+                    , disabled disable
                     , onInput (SetId >> ElementMsg)
+                    , preventDefaultOn
+                            "keydown"
+                            (updateIdDecoder (if isNode then nodeIds else edgeIds) model.selection model.id
+                                |> Decode.andThen enterDecoder
+                                |> Decode.andThen (\val -> Decode.succeed (val, True))
+                            )
+                    , class (validClass (\i -> isValidId (if isNode then nodeIds else edgeIds) i || disable) model.id)
                     ]
                     []
+                , div
+                    [ class "input-group-append" ]
+                    [ input
+                        [ type_ "button"
+                        , class "input-group-text"
+                        , disabled (disable || not (isValidId (if isNode then nodeIds else edgeIds) model.id))
+                        , value "↲"
+                        , on "click" (updateIdDecoder (if isNode then nodeIds else edgeIds) model.selection model.id)
+                        ]
+                        []
+                    ]
                 ]
 
         labelInput =
@@ -222,11 +283,11 @@ options host isNode disable graph model =
                     , onInput (SetLabel >> ElementMsg)
                     , preventDefaultOn
                             "keydown"
-                            (updateLabelDecoder model.selection model.label
+                            (updateLabelDecoder host model.selection model.label
                                 |> Decode.andThen enterDecoder
                                 |> Decode.andThen (\val -> Decode.succeed (val, True))
                             )
-                    , class (validClass model.label)
+                    , class (validClass (if host then isValid else isValidR) model.label)
                     ]
                     []
                 , div
@@ -236,7 +297,7 @@ options host isNode disable graph model =
                         , class "input-group-text"
                         , disabled (disable || not (isValid model.label))
                         , value "↲"
-                        , on "click" (updateLabelDecoder model.selection model.label)
+                        , on "click" (updateLabelDecoder host model.selection model.label)
                         ]
                         []
                     ]
@@ -296,7 +357,7 @@ options host isNode disable graph model =
 
         flagInput =
             div
-                [ hidden ((not isNode) && host)
+                [ hidden ((not isNode) && host || disable)
                 , class "input-group my-2 mr-sm-2"
                 ]
                 [ div
