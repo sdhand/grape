@@ -360,7 +360,7 @@ updateFile msg model =
             ( model, Download.string "graph.rule" "text/plain" (GP2Rule.toGP2 (toRule model)))
 
         SaveDot ->
-            ( model, Download.string "graph.dot" "text/vnd.graphviz" (GP2Graph.toDot model.rightModel.graph))
+            ( model, Download.string "graph.dot" "text/vnd.graphviz" (GP2Rule.toDot (toRule model)))
 
         DismissError ->
             ( { model | error = False }, Cmd.none )

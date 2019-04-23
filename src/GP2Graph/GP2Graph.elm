@@ -1,4 +1,4 @@
-module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), RuleList, RuleListItem(..), StringExpr(..), IntExpr(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot, interface)
+module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), RuleList, RuleListItem(..), StringExpr(..), IntExpr(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot, interface, getCorrespondingNode, markToColour, getCorrespondingEdge)
 
 import DotLang exposing (Attr(..), Dot(..), EdgeRHS(..), EdgeType(..), ID(..), Stmt(..))
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
@@ -273,6 +273,21 @@ toDot graph =
         Nothing
         (List.map nodeToDot (Graph.nodes graph) ++ (List.filterMap (edgeToDot graph) (Graph.edges graph) |> List.concat))
         |> DotLang.toString
+
+
+getCorrespondingNode : Node ( Label, Ellipse ) -> VisualGraph -> Maybe (Node ( Label, Ellipse ))
+getCorrespondingNode node graph =
+    Graph.nodes graph
+        |> List.filter (.label >> Tuple.first >> .id >> (==) (Tuple.first node.label).id)
+        |> List.head
+
+
+getCorrespondingEdge : Label -> VisualGraph -> Maybe Label
+getCorrespondingEdge label graph =
+    Graph.edges graph
+        |> List.map (.label >> List.filter (.id >> (==) label.id))
+        |> List.concat
+        |> List.head
 
 
 getAttr : String -> List Attr -> Maybe String
