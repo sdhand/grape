@@ -143,9 +143,8 @@ toDot : GP2Rule -> String
 toDot { vars, left, right, condition } =
     Dot
         DotLang.Digraph
-        Nothing
-        ((AttrStmt AttrGraph [ Attr (ID "comment") (ID (vars++"\n"++condition)) ])::
+        (Just (ID (vars++"="++condition)))
         (List.map (leftNodeToDot right) (Graph.nodes left) ++ List.filterMap (rightNodeToDot left) (Graph.nodes right)
         ++ (List.concat <| List.filterMap (edgesToDot "left" "obox" left right) (Graph.edges left)) ++ (List.concat <| List.filterMap (edgesToDot "right" "odiamond" right left) (Graph.edges right))
-        ))
+        )
         |> DotLang.toString
