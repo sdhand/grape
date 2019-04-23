@@ -1,10 +1,11 @@
-module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), RuleList, RuleListItem(..), StringExpr(..), IntExpr(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot)
+module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), RuleList, RuleListItem(..), StringExpr(..), IntExpr(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot, interface)
 
 import DotLang exposing (Attr(..), Dot(..), EdgeRHS(..), EdgeType(..), ID(..), Stmt(..))
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
 import Geometry.Vec2 exposing (Vec2)
 import Graph exposing (Graph, Node, NodeContext, NodeId)
 import IntDict
+import Set
 import List.Extra
 
 
@@ -130,6 +131,18 @@ markToColour mark =
 
         Green ->
             ("green", "green")
+
+
+interface : VisualGraph -> VisualGraph -> List String
+interface graph1 graph2 =
+    Set.intersect
+        ((Graph.nodes graph1)
+            |> List.map (.label >> Tuple.first >> .id)
+            |> Set.fromList)
+        ((Graph.nodes graph2)
+            |> List.map (.label >> Tuple.first >> .id)
+            |> Set.fromList)
+        |> Set.toList
 
 
 nodesToGP2 : Graph.Node ( Label, Ellipse ) -> String -> String

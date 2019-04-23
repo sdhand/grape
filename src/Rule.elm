@@ -17,6 +17,7 @@ import Parser
 import File.Select as Select
 import List.Extra
 import GP2Graph.GP2Graph as GP2Graph exposing (VisualGraph)
+import GP2Graph.GP2Rule as GP2Rule
 import Graph
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -356,13 +357,18 @@ updateFile msg model =
             shouldLayout layoutDone (parseGraph layoutDone graph) model
 
         SaveGP2 ->
-            ( model, Download.string "graph.host" "text/plain" (GP2Graph.toGP2 model.rightModel.graph))
+            ( model, Download.string "graph.rule" "text/plain" (GP2Rule.toGP2 (toRule model)))
 
         SaveDot ->
             ( model, Download.string "graph.dot" "text/vnd.graphviz" (GP2Graph.toDot model.rightModel.graph))
 
         DismissError ->
             ( { model | error = False }, Cmd.none )
+
+
+toRule : Model -> GP2Rule.GP2Rule
+toRule { vars, leftModel, rightModel, condition } =
+    { vars = vars, left = leftModel.graph, right = rightModel.graph, condition = condition }
 
 
 parseGraph : Bool -> String -> Result (List Parser.DeadEnd) Dot
