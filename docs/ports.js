@@ -20,7 +20,7 @@ function findFit(node)
     let origin = point2.matrixTransform(svg.getScreenCTM().inverse());
     let width = position.x - origin.x;
 
-    app.ports.fitDone.send({id:node.id, width:width});
+    app.ports.fitDone.send({id:node.id, width:width, svg:node.svg});
 }
 
 

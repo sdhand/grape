@@ -1,4 +1,4 @@
-module Editor.Graph exposing (Model, Msg(..), Selection(..), Action(..), init, update, view, subscriptions, setGraph)
+module Editor.Graph exposing (Model, Msg(..), Selection(..), Action(..), init, update, view, subscriptions, setGraph, setGraphP)
 
 
 import AssocList as Dict exposing (Dict)
@@ -128,8 +128,10 @@ init graph id host =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Ports.Editor.fitDone (Decode.decodeValue (Decode.map2 ActualFit (Decode.field "id" Decode.int) (Decode.field "width" Decode.float)) >> Result.withDefault NullMsg)
+subscriptions model =
+    Ports.Editor.fitDone
+        (Decode.decodeValue ((Decode.field "svg" Decode.string)
+            |> Decode.andThen (\s -> if s /= model.id then Decode.fail "" else (Decode.map2 ActualFit (Decode.field "id" Decode.int) (Decode.field "width" Decode.float)))) >> Result.withDefault NullMsg)
 
 
 update : String -> String -> Msg -> Model -> ( Model, Cmd Msg )
@@ -216,10 +218,12 @@ stretch graph =
 
 setGraph : Bool -> Dot -> Model -> (Model, Cmd Msg)
 setGraph shouldStretch dotGraph model =
-    let
-        parsed =
-            GP2Graph.fromDot dotGraph
+    setGraphP shouldStretch (GP2Graph.fromDot dotGraph) model
 
+
+setGraphP : Bool -> VisualGraph -> Model -> (Model, Cmd Msg)
+setGraphP shouldStretch parsed model =
+    let
         graph =
             if shouldStretch then
                 stretch parsed
@@ -494,7 +498,7 @@ svgContainer model contents =
             model.center.y - (height/2)
     in
     svg
-        [ class "graph-editor"
+        [ class ("graph-editor"++(if model.id == "left-rule-editor" then " border-right" else ""))
         , on "svgrightup" (Decode.succeed (Action NullAction))
         , on "svgleftup" (Decode.succeed (Action NullAction))
         , on "svgmousemove" moveDecoder

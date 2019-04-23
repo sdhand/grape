@@ -1,9 +1,9 @@
-module GP2Graph.GP2Parser exposing (parse)
+module GP2Graph.GP2Parser exposing (parse, position, whitespace, lexeme, stmtList)
 
 
 import Parser exposing (..)
 import DotLang exposing (Dot(..), Stmt(..), ID(..), NodeId(..), AttrStmtType(..), EdgeRHS(..), EdgeType(..), Attr(..))
-import GP2Graph.HostListParser exposing (hostListParser)
+import GP2Graph.RuleListParser exposing (id, listExpr)
 
 
 parse : String -> Result (List DeadEnd) Dot
@@ -64,13 +64,13 @@ item parser list =
 nodeId : Parser NodeId
 nodeId =
     succeed (\id -> NodeId (ID id) Nothing)
-        |= (lexeme int |> map String.fromInt)
+        |= lexeme id
 
 
 edgeId : Parser Attr
 edgeId =
     succeed (Attr (ID "id"))
-        |= (succeed ID |= map String.fromInt int)
+        |= (succeed ID |= lexeme id)
 
 
 parseList : List (Parser a) -> Parser (List a)
@@ -87,7 +87,7 @@ hostList : Parser String
 hostList =
     succeed String.slice
         |= getOffset
-        |. hostListParser
+        |. listExpr
         |= getOffset
         |= getSource
         |> andThen (\s -> if s == "empty" then succeed "" else succeed s)
@@ -96,8 +96,17 @@ hostList =
 root : Parser (Maybe Attr)
 root =
     succeed (Attr (ID "style") >> Just)
-        |= (succeed ID |= oneOf [ succeed "bold,filled" |. (symbol >> lexeme) "(R)", succeed "filled" ])
+        |= (succeed ID |= oneOf [ succeed "filled,bold" |. (symbol >> lexeme) "(R)", succeed "filled,solid" ])
         |. (symbol >> lexeme) ","
+
+
+bidirectional : Parser Attr
+bidirectional =
+    succeed (ID >> Attr (ID "dir"))
+        |= oneOf
+            [ succeed "both" |. (symbol >> lexeme) "(B)"
+            , succeed "forward"
+            ]
 
 
 nodeColour : Parser (Maybe Attr)
@@ -112,28 +121,32 @@ nodeColour =
                     , succeed "red" |. (symbol >> lexeme) "red"
                     , succeed "green" |. (symbol >> lexeme) "green"
                     , succeed "blue" |. (symbol >> lexeme) "blue"
+                    , succeed "pink" |. (symbol >> lexeme) "any"
                     ]
             )
-        , succeed Nothing
+        , succeed (Just (Attr (ID "fillcolor") (ID "white")))
         ]
 
 
 edgeColour : Parser (Maybe Attr)
 edgeColour =
-    oneOf
-        [ succeed (Attr (ID "color") >> Just)
-            |= (succeed ID
-                |. (symbol >> lexeme) "#"
-                |= oneOf
-                    [ succeed "black" |. (symbol >> lexeme) "none"
-                    , succeed "red" |. (symbol >> lexeme) "red"
-                    , succeed "green" |. (symbol >> lexeme) "green"
-                    , succeed "blue" |. (symbol >> lexeme) "blue"
-                    ]
-            )
-        , succeed identity |. (symbol >> lexeme) "#" |. (symbol >> lexeme) "dashed" |= succeed (Just (Attr (ID "style") (ID "dashed")))
-        , succeed Nothing
-        ]
+        oneOf [
+        succeed identity
+        |. (symbol >> lexeme) "#"
+        |= oneOf
+            [ succeed (Attr (ID "color") >> Just)
+                |= (succeed ID
+                    |= oneOf
+                        [ succeed "black" |. (symbol >> lexeme) "none"
+                        , succeed "red" |. (symbol >> lexeme) "red"
+                        , succeed "green" |. (symbol >> lexeme) "green"
+                        , succeed "blue" |. (symbol >> lexeme) "blue"
+                        , succeed "pink" |. (symbol >> lexeme) "any"
+                        ]
+                )
+            , succeed identity |. (symbol >> lexeme) "dashed" |= succeed (Just (Attr (ID "style") (ID "dashed"))) ]
+            , succeed (Just (Attr (ID "color") (ID "black")))
+            ]
 
 
 
@@ -163,9 +176,10 @@ node =
 
 edge : Parser Stmt
 edge =
-    succeed (\id from to attrs -> EdgeStmtNode from (EdgeNode to) [] (id::attrs))
+    succeed (\id bidir from to attrs -> EdgeStmtNode from (EdgeNode to) [] (id::bidir::attrs))
         |. (symbol >> lexeme) "("
         |= edgeId
+        |= bidirectional
         |. (symbol >> lexeme) ","
         |= nodeId
         |. (symbol >> lexeme) ","

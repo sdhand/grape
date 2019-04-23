@@ -1,4 +1,4 @@
-module GP2Graph.GP2Rule exposing (GP2Rule, toGP2, toDot)
+module GP2Graph.GP2Rule exposing (GP2Rule, toGP2, toDot, fromDot)
 
 
 import GP2Graph.GP2Graph as GP2Graph
@@ -148,3 +148,169 @@ toDot { vars, left, right, condition } =
         ++ (List.concat <| List.filterMap (edgesToDot "left" "obox" left right) (Graph.edges left)) ++ (List.concat <| List.filterMap (edgesToDot "right" "odiamond" right left) (Graph.edges right))
         )
         |> DotLang.toString
+
+
+getData : ID -> Maybe (String, String)
+getData id =
+    case id of
+        ID str ->
+            let
+                words =
+                    String.split "=" str
+            in
+            Maybe.map2
+                Tuple.pair
+                (List.head words)
+                (List.tail words |> Maybe.map (String.join "="))
+
+        _ ->
+            Nothing
+
+
+fromDot : Dot -> GP2Rule
+fromDot (Dot _ data stmts) =
+    { vars = Maybe.andThen getData data
+        |> Maybe.map Tuple.first
+        |> Maybe.withDefault ""
+    , condition = Maybe.andThen getData data
+        |> Maybe.map Tuple.second
+        |> Maybe.withDefault ""
+    , left =
+        List.foldl (nodeFromDot "rect" Tuple.first) Graph.empty stmts
+            |> (\graph -> List.foldl (edgeFromDot "obox" "left") graph stmts)
+    , right =
+        List.foldl (nodeFromDot "diamond" Tuple.second) Graph.empty stmts
+            |> (\graph -> List.foldl (edgeFromDot "odiamond" "right") graph stmts)
+    }
+
+
+removePrefix : String -> List Attr -> List Attr
+removePrefix prefix attrs =
+    List.map
+        (\attr ->
+            case attr of
+                Attr (ID "id") (ID id) ->
+                    if String.startsWith (prefix++"_") id then
+                        Attr (ID "id") (ID (String.dropLeft ((String.length prefix)+1) id))
+
+                    else
+                        attr
+                _ ->
+                    attr
+        )
+        attrs
+
+
+edgeFromDot : String -> String -> Stmt -> GP2Graph.VisualGraph -> GP2Graph.VisualGraph
+edgeFromDot shape side stmt graph =
+    case stmt of
+        EdgeStmtNode (DotLang.NodeId from _) (EdgeNode (DotLang.NodeId to _)) _ attrs ->
+            case GP2Graph.getAttr "arrowhead" attrs of
+                Just str ->
+                    if str == shape then
+                        GP2Graph.edgeFromDot (EdgeStmtNode (DotLang.NodeId from Nothing) (EdgeNode (DotLang.NodeId to Nothing)) [] (removePrefix side attrs)) graph
+
+                    else
+                        graph
+
+                _ ->
+                    graph
+
+        _ ->
+            graph
+
+
+nodeFromDot : String -> ( (String, String) -> String) -> Stmt -> GP2Graph.VisualGraph -> GP2Graph.VisualGraph
+nodeFromDot shape unjoin stmt graph =
+    case stmt of
+        NodeStmt (DotLang.NodeId id _) attrs ->
+            case GP2Graph.getAttr "shape" attrs of
+                Just "ellipse" ->
+                    Maybe.map5
+                        (\pos i label mark flag -> GP2Graph.createNode ({ id = i, label = label, mark = mark, flag = flag }, pos) graph)
+                        (GP2Graph.getDotPos attrs)
+                        (GP2Graph.getDotId id)
+                        (getDotLabel unjoin attrs)
+                        (getDotMark unjoin attrs)
+                        (getDotRoot unjoin attrs)
+                        |> Maybe.withDefault graph
+
+                Just str ->
+                    if str == shape then
+                        GP2Graph.nodeFromDot stmt graph
+
+                    else
+                        graph
+
+                _ ->
+                    graph
+
+        _ ->
+            graph
+
+
+nodeColourToMark : String -> GP2Graph.Mark
+nodeColourToMark colour =
+    case colour of
+        "pink" ->
+            GP2Graph.Any
+
+        "grey" ->
+            GP2Graph.Grey
+
+        "red" ->
+            GP2Graph.Red
+
+        "green" ->
+            GP2Graph.Green
+
+        "blue" ->
+            GP2Graph.Blue
+
+        _ ->
+            GP2Graph.None
+
+
+getDotLabel : ( (String, String) -> String) -> List Attr -> Maybe String
+getDotLabel unjoin attrs =
+    let
+        words =
+            GP2Graph.getAttr "label" attrs
+                |> Maybe.map (String.split "/")
+    in
+    Maybe.map2
+        Tuple.pair
+        (Maybe.andThen List.head words)
+        (Maybe.andThen List.tail words |> Maybe.map (String.join "/"))
+        |> Maybe.map unjoin
+
+
+getDotMark : ( (String, String) -> String) -> List Attr -> Maybe GP2Graph.Mark
+getDotMark unjoin attrs =
+    let
+        words =
+            GP2Graph.getAttr "fillcolor" attrs
+                |> Maybe.map (String.split ":")
+    in
+    Maybe.map2
+        Tuple.pair
+        (Maybe.andThen List.head words |> Maybe.map (String.split ";") |> Maybe.andThen List.head)
+        (Maybe.andThen List.tail words |> Maybe.map (String.join ":"))
+        |> Maybe.map unjoin
+        |> Maybe.map nodeColourToMark
+
+
+getDotRoot : ( (String, String) -> String) -> List Attr -> Maybe Bool
+getDotRoot unjoin attrs =
+    let
+        words =
+            GP2Graph.getAttr "style" attrs
+                |> Maybe.map (String.split ",")
+
+    in
+    Maybe.map2
+        Tuple.pair
+        (Maybe.andThen List.tail words |> Maybe.andThen List.head)
+        (Maybe.andThen List.tail words |> Maybe.andThen List.tail |> Maybe.map (String.join ","))
+        |> Maybe.map unjoin
+        |> Maybe.map (\s -> String.contains s "bold")

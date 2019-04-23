@@ -12,6 +12,7 @@ import File.Download as Download
 import Task
 import DotLang exposing (Dot)
 import GP2Graph.GP2Parser as GP2Parser
+import GP2Graph.RuleParser as RuleParser
 import Json.Decode as Decode
 import Parser
 import File.Select as Select
@@ -74,21 +75,18 @@ view model =
             , input [ class "ruledecl border-bottom", type_ "text", placeholder "name ( vars: type, ... )", value model.vars, onInput SetVars ] []
             , div
                 [ class "rule-container" ]
-                [ div
-                    [ class "border-right" ]
-                    [ GraphEditor.view
+                [ GraphEditor.view
                         (getNodeIds model.rightModel.graph)
                         (getEdgeIds model.rightModel.graph)
                         model.leftModel
                         |> Html.map (ElementEditor.EditorMsg >> Left)
-                    ]
                 , GraphEditor.view
                     (getNodeIds model.leftModel.graph)
                     (getEdgeIds model.leftModel.graph)
                     model.rightModel
                     |> Html.map (ElementEditor.EditorMsg >> Right)
                 ]
-            , textarea [ rows 4, class "condition border-top", placeholder "Condition", value model.condition, onInput SetCondition ] []
+            , input [ type_ "text", class "condition border-top", placeholder "Condition", value model.condition, onInput SetCondition ] []
             ]
         ]++(showModal model.error)
     }
@@ -335,7 +333,7 @@ updateFile : FileMsg -> Model -> ( Model, Cmd Msg )
 updateFile msg model =
     case msg of
         OpenGP2 ->
-            ( model, Select.file [ ".host" ] (SelectGP2 >> ElementEditor.FileMsg >> Right) )
+            ( model, Select.file [ ".rule" ] (SelectGP2 >> ElementEditor.FileMsg >> Right) )
 
         OpenDot ->
             ( model, Select.file [ ".dot" ] (SelectDot >> ElementEditor.FileMsg >> Right) )
@@ -351,7 +349,7 @@ updateFile msg model =
             ( model, Task.perform (LoadDot False >> ElementEditor.FileMsg >> Right) (File.toString file))
 
         LoadGP2 graph ->
-            shouldLayout False (GP2Parser.parse graph) model
+            shouldLayout False (RuleParser.parse graph) model
 
         LoadDot layoutDone graph ->
             shouldLayout layoutDone (parseGraph layoutDone graph) model
@@ -393,7 +391,17 @@ shouldLayout layoutDone graph model =
     case graph of
         Ok dotGraph ->
             if layoutDone || not (Dot.needsLayout dotGraph) then
-                setRightGraph layoutDone dotGraph model
+                let
+                    rule =
+                        GP2Rule.fromDot dotGraph
+
+                    (newModel, rightCmd) =
+                        setRightGraph layoutDone rule.right model
+
+                    (newNewModel, leftCmd) =
+                        setLeftGraph layoutDone rule.left newModel
+                in
+                ( { newNewModel | vars = rule.vars, condition = rule.condition }, Cmd.batch [ rightCmd, leftCmd ] )
 
             else
                 ( model, Ports.Editor.layoutGraph (Encode.string (DotLang.toString dotGraph)))
@@ -402,20 +410,20 @@ shouldLayout layoutDone graph model =
             ( { model | error = True }, Cmd.none )
 
 
-setRightGraph : Bool -> Dot -> Model -> ( Model, Cmd Msg )
+setRightGraph : Bool -> VisualGraph -> Model -> ( Model, Cmd Msg )
 setRightGraph shouldStretch graph model =
     let
         ( editorModel, cmd ) =
-            GraphEditor.setGraph shouldStretch graph model.rightModel
+            GraphEditor.setGraphP shouldStretch graph model.rightModel
     in
     ({ model | rightModel = editorModel, elementModel = ElementEditor.update editorModel (ElementEditor.Select GraphEditor.NullSelection) model.elementModel }, Cmd.map (ElementEditor.EditorMsg >> Right) cmd)
 
-            
-setLeftGraph : Bool -> Dot -> Model -> ( Model, Cmd Msg )
+
+setLeftGraph : Bool -> VisualGraph -> Model -> ( Model, Cmd Msg )
 setLeftGraph shouldStretch graph model =
     let
         ( editorModel, cmd ) =
-            GraphEditor.setGraph shouldStretch graph model.leftModel
+            GraphEditor.setGraphP shouldStretch graph model.leftModel
     in
     ({ model | leftModel = editorModel, elementModel = ElementEditor.update editorModel (ElementEditor.Select GraphEditor.NullSelection) model.elementModel }, Cmd.map (ElementEditor.EditorMsg >> Left) cmd)
 

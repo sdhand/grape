@@ -1,4 +1,4 @@
-module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), RuleList, RuleListItem(..), StringExpr(..), IntExpr(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot, interface, getCorrespondingNode, markToColour, getCorrespondingEdge)
+module GP2Graph.GP2Graph exposing (HostList, HostListItem(..), RuleList, RuleListItem(..), StringExpr(..), IntExpr(..), Label, Mark(..), MultiContext, MultiGraph, VisualContext, VisualGraph, createEdge, createNode, deleteEdge, getEdgeData, getNodeData, internalId, isValid, nodePosition, setFlag, setId, setLabel, setMark, setNodeMajor, setNodeMinor, setNodePosition, toDot, toGP2, tryId, updateEdgeFlag, updateEdgeId, updateEdgeLabel, updateEdgeMark, updateNodeFlag, updateNodeId, updateNodeLabel, updateNodeMark, fromDot, interface, getCorrespondingNode, markToColour, getCorrespondingEdge, getAttr, getDotId, nodeFromDot, getDotPos, edgeFromDot)
 
 import DotLang exposing (Attr(..), Dot(..), EdgeRHS(..), EdgeType(..), ID(..), Stmt(..))
 import Geometry.Ellipse as Ellipse exposing (Ellipse)
@@ -361,6 +361,12 @@ getDotRoot attrs =
     String.contains "bold" (getAttr "style" attrs |> Maybe.withDefault "")
 
 
+getDotBidir : List Attr -> Bool
+getDotBidir attrs =
+    Maybe.map ((==) "both") (getAttr "dir" attrs)
+        |> Maybe.withDefault False
+
+
 parseCenter : String -> Maybe Vec2
 parseCenter pos =
     let
@@ -412,7 +418,7 @@ edgeFromDot stmt graph =
     case stmt of
         EdgeStmtNode (DotLang.NodeId from _) (EdgeNode (DotLang.NodeId to _)) _  attrs ->
             Maybe.map3
-                (\i f t -> createEdge { id = i, label = getDotLabel attrs, mark = getDotEdgeMark attrs, flag = False } f t graph)
+                (\i f t -> createEdge { id = i, label = getDotLabel attrs, mark = getDotEdgeMark attrs, flag = getDotBidir attrs } f t graph)
                 (getAttr "id" attrs)
                 (getDotId from |> Maybe.andThen (\f -> internalId f graph))
                 (getDotId to |> Maybe.andThen (\t -> internalId t graph))
