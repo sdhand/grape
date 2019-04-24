@@ -872,13 +872,6 @@ edgeStyle interface { selection, host } from to id edge =
                 |> Maybe.map (\style -> "url(#arrow-" ++ style ++ suffix ++ ")")
                 |> Maybe.withDefault "none"
 
-        markerBi =
-            if edge.flag then
-                markerId "-start"
-
-            else
-                "none"
-
         dashed =
             if edge.mark == GP2Graph.Dashed then
                 "10 5"
@@ -889,7 +882,6 @@ edgeStyle interface { selection, host } from to id edge =
     [ strokeWidth (if not host && interface then "2" else "1")
     , stroke (colour strokeStyle |> Colour.toCss)
     , fillOpacity "0"
-    , markerEnd (markerId "-end")
-    , markerStart markerBi
+    , markerEnd (if edge.flag then "none" else markerId "-end")
     , strokeDasharray dashed
     ]
