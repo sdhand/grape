@@ -295,7 +295,7 @@ options host isNode disable graph otherGraph model =
                     [ input
                         [ type_ "button"
                         , class "input-group-text"
-                        , disabled (disable || not (isValid model.label))
+                        , disabled (disable || not (if host then isValid model.label else isValidR model.label))
                         , value "↲"
                         , on "click" (updateLabelDecoder host model.selection model.label)
                         ]
