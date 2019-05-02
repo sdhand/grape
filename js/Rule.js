@@ -17923,7 +17923,7 @@ var author$project$Rule$view = function (model) {
 						]))
 				]),
 			author$project$Rule$showModal(model.aw)),
-		bn: 'gp2editor'
+		bn: 'grape - Rule Editor'
 	};
 };
 var elm$browser$Browser$document = _Browser_document;

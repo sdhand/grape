@@ -16546,7 +16546,7 @@ var author$project$Main$view = function (model) {
 						]))
 				]),
 			author$project$Main$showModal(model.at)),
-		bk: 'gp2editor'
+		bk: 'grape - Host Editor'
 	};
 };
 var elm$browser$Browser$document = _Browser_document;
