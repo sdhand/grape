@@ -50,7 +50,7 @@ init _ =
 
 view : Model -> Document Msg
 view model =
-    { title = "gp2editor"
+    { title = "grape - Host Editor"
     , body =
         [ div
             [ class "host-container" ]

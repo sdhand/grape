@@ -1,0 +1,7 @@
+language: elm
+
+script: bash ./deploy.sh
+env:
+  global:
+  - ENCRYPTION_LABEL: "8690585ce1fc"
+  - COMMIT_AUTHOR_EMAIL: "samuel.d.hand@gmail.com"
