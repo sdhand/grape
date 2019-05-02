@@ -19,6 +19,8 @@ The basic graph editing interface described in the table below is the same acros
 
 Adding an element to the left hand side of a rule will automatically add it to the right hand side. This way, any modifications made by the rule are explicitly stated by modifying the right hand side of the rule. For example, to create a rule that deletes a node, first create the node in the left hand side, then delete it from the right hand side.
 
+Graphs and rules can both be saved in the DOT and GP 2 formats with the buttons in the toolbar. The default format is DOT, and the dropdown can be used to select GP 2 instead. The DOT representation for rules differentiates between created and deleted elements through the use of shapes.
+
 The rule declaration and condition can be set in the text boxes above and below the rule, respectively.
 
 ## Installation
